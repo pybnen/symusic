@@ -2,6 +2,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from music_vae import utils
 
@@ -78,7 +79,7 @@ class SimpleDecoder(nn.Module):
 
         self.fc_out = nn.Linear(hidden_size, output_size)
 
-    def forward(self, input: torch.Tensor, state: torch.Tensor):
+    def forward(self, input: torch.Tensor, state: torch.Tensor, _: torch.Tensor):
         hidden, cell = state
 
         # input [batch size]
@@ -169,25 +170,22 @@ class AnotherDecoder(nn.Module):
         return ckpt
 
 
-class Seq2Seq(nn.Module):
-    def __init__(self, encoder, decoder, device):
+class SimpleSeqDecoder(nn.Module):
+
+    def __init__(self, decoder, z_size, device):
         super().__init__()
 
-        self.encoder = encoder
         self.decoder = decoder
         self.device = device
+        self.z_size = z_size
+        self.output_size = decoder.output_size
         self.sampling_rate = 0.0
 
         n_states = decoder.hidden_size * decoder.n_layers * 2
         self.fc_state = nn.Sequential(
-            nn.Linear(encoder.z_size, n_states),
+            nn.Linear(z_size, n_states),
             nn.Tanh()
         )
-
-    def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return mu + eps * std
 
     def cell_state_from_context(self, z):
         batch_size = z.shape[0]
@@ -195,27 +193,34 @@ class Seq2Seq(nn.Module):
         hidden, cell = states.view(batch_size, self.decoder.n_layers, 2, -1).permute(2, 1, 0, 3).contiguous()
         return hidden, cell
 
-    def forward(self, src, trg, teacher_forcing_ratio=0.5):
-        # src = [batch size, src len]
-        # trg = [batch size, trg len]
+    def forward(self, trg, z, teacher_forcing_ratio=0.5, initial_input=None):
+        # trg [batch size, trg len]
+        # z [batch size, z size]
 
-        batch_size = trg.shape[0]
-        trg_len = trg.shape[1]
-        output_size = self.decoder.output_size
+        batch_size, trg_len = trg.shape
+        output_size = self.output_size
 
         # tensor to store decoder outputs
         outputs = torch.zeros(batch_size, trg_len, output_size).to(self.device)
 
-        # last hidden state of the encoder is used as the initial hidden state of the decoder
-        mu, logvar = self.encoder(src)
-        z = self.reparameterize(mu, logvar)
-
+        # z is used to init hidden states of decoder
         hidden, cell = self.cell_state_from_context(z)
-        # first input to the decoder is the <sos> tokens
-        input = trg[:, 0]
 
+        top1 = initial_input
         sampling_cnt = 0.
-        for t in range(1, trg_len):
+        for t in range(0, trg_len):
+            assert top1 is not None or t == 0
+
+            # get input for decoder
+            teacher_force = torch.rand(1).item() < teacher_forcing_ratio
+            if teacher_force or top1 is None:
+                # use target token as input
+                input = trg[:, t]
+            else:
+                # use predicted token
+                input = top1
+                sampling_cnt += 1
+
             # insert input token embedding, previous hidden and previous cell states
             # receive output tensor (predictions) and new hidden and cell states
             output, (hidden, cell) = self.decoder(input, (hidden, cell), z.detach())
@@ -223,35 +228,79 @@ class Seq2Seq(nn.Module):
             # place predictions in a tensor holding predictions for each token
             outputs[:, t] = output
 
-            # decide if we are going to use teacher forcing or not
-            teacher_force = torch.rand(1).item() < teacher_forcing_ratio
-
             # get the highest predicted token from our predictions
             top1 = output.detach().argmax(1)
 
-            # if teacher forcing, use actual next token as next input
-            # if not, use predicted token
-            if teacher_force:
-                input = trg[:, t]
-            else:
-                input = top1
-                sampling_cnt += 1
-
-        self.sampling_rate = sampling_cnt / (trg_len - 1)
-
-        return outputs, mu, logvar, z
+        self.sampling_rate = sampling_cnt / trg_len
+        return outputs
 
     def create_ckpt(self):
-        ckpt = {"encoder": self.encoder.create_ckpt(),
-                "decoder": self.decoder.create_ckpt()}
+        ckpt = {"clazz": ".".join([self.__module__, self.__class__.__name__]),
+                "decoder": self.decoder.create_ckpt(),
+                "kwargs": dict(z_size=self.z_size)}
         return ckpt
 
     @classmethod
-    def load_from_ckpt(clazz, ckpt, state_dir, device):
-        enc = utils.load_class_by_name(ckpt["encoder"]["clazz"], **ckpt['encoder']['kwargs'])
-        dec = utils.load_class_by_name(ckpt["decoder"]["clazz"], **ckpt['decoder']['kwargs'])
+    def load_from_ckpt(cls, ckpt, device, state_dict=None):
+        dec = utils.load_class_by_name(ckpt["decoder"]["clazz"], **ckpt["decoder"]["kwargs"])
 
-        model = clazz(enc, dec, device)
-        model.load_state_dict(state_dir)
+        seq_decoder = cls(decoder=dec, device=device, **ckpt["kwargs"])
+        if state_dict is not None:
+            seq_decoder.load_state_dict(state_dict)
+
+        return seq_decoder
+
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, seq_decoder, sos_token):
+        super().__init__()
+
+        self.encoder = encoder
+        self.seq_decoder = seq_decoder
+        self.sos_token = sos_token
+        self.sampling_rate = 0.0
+
+        self.input_size = encoder.input_size
+        self.output_size = seq_decoder.output_size
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def forward(self, src, teacher_forcing_ratio=0.5):
+        # src = [batch size, src len]
+
+        # encode source input sequence
+        mu, logvar = self.encoder(src)
+        z = self.reparameterize(mu, logvar)
+
+        # add <sos> token at the start of sequence and trim last input
+        #  to get decoder input
+        trg = F.pad(src, pad=[1, 0, 0, 0], value=self.sos_token)[:, :-1]
+
+        # trg = [batch size, src len]
+
+        outputs = self.seq_decoder(trg, z, teacher_forcing_ratio=teacher_forcing_ratio)
+
+        self.sampling_rate = self.seq_decoder.sampling_rate
+        return outputs, mu, logvar, z
+
+    def create_ckpt(self):
+        ckpt = {
+            "kwargs": dict(sos_token=self.sos_token),
+            "encoder": self.encoder.create_ckpt(),
+            "seq_decoder": self.seq_decoder.create_ckpt()
+        }
+        return ckpt
+
+    @classmethod
+    def load_from_ckpt(cls, ckpt, device, state_dict=None):
+        enc = utils.load_class_by_name(ckpt["encoder"]["clazz"], **ckpt["encoder"]["kwargs"])
+        seq_decoder = utils.get_class_by_name(ckpt["seq_decoder"]["clazz"]).load_from_ckpt(ckpt["seq_decoder"], device)
+
+        model = cls(enc, seq_decoder, **ckpt["kwargs"])
+        if state_dict is not None:
+            model.load_state_dict(state_dict)
 
         return model

@@ -8,10 +8,9 @@ import pretty_midi
 
 from music_vae.music import settings
 from music_vae.music.melody import Melody
-from music_vae.music.note_container_lib import NoteContainer,\
-    split_on_time_signature_tempo_change, quantize_note_container,\
+from music_vae.music.note_container_lib import NoteContainer, \
+    split_on_time_signature_tempo_change, quantize_note_container, \
     steps_per_bar_in_quantized_container
-
 
 MELODY_NOTE_OFF = settings.MELODY_NOTE_OFF
 MELODY_NO_EVENT = settings.MELODY_NO_EVENT
@@ -27,8 +26,10 @@ class MelodyExtractor:
                  max_bars=100,
                  slice_bars=2,
                  steps_per_quarter=4,
+                 quarters_per_bar=4,
                  gap_bars=1.0,
-                 pad_end=True):
+                 pad_end=True,
+                 max_melodies_per_sample=5):
 
         self.min_pitch = min_pitch
         self.max_pitch = max_pitch
@@ -37,7 +38,10 @@ class MelodyExtractor:
         self.slice_bars = slice_bars
         self.steps_per_quarter = steps_per_quarter
         self.gap_bars = gap_bars
-        self.pad_end=pad_end
+        self.pad_end = pad_end
+
+        self.steps_per_bar = steps_per_quarter * quarters_per_bar
+        self.max_steps_truncate = self.steps_per_bar * max_bars if max_bars else None
 
     def filter_notes(self, nc):
         def filter(note):
@@ -52,10 +56,9 @@ class MelodyExtractor:
     def extract_melodies(self, midi_path):
         try:
             pm = pretty_midi.PrettyMIDI(midi_path)
-        except EOFError:
+            note_containers = split_on_time_signature_tempo_change(NoteContainer.from_pretty_midi(pm))
+        except:
             return []
-
-        note_containers = split_on_time_signature_tempo_change(NoteContainer.from_pretty_midi(pm))
 
         total_melodies = []
         for nc in note_containers:
@@ -64,14 +67,9 @@ class MelodyExtractor:
             self.filter_notes(nc)
             qnc = quantize_note_container(nc, self.steps_per_quarter)
             melodies = extract_melodies(qnc, gap_bars=self.gap_bars,
-                                        max_bars=self.max_bars,
+                                        max_steps_truncate=self.max_steps_truncate,
                                         pad_end=self.pad_end)
             total_melodies.extend(melodies)
-
-        # slice melodies
-        # unique melodies
-        # finished
-
         return total_melodies
 
     @staticmethod
@@ -81,7 +79,7 @@ class MelodyExtractor:
             # if no time signature is given it is assumed 4/4
             # see: http://midi.teragonaudio.com/tech/midifile/time.htm
             return True
-        return True
+
         # there is at least one time signature, all time signatures must be 4/4
         for time_signature in nc.time_signatures:
             if time_signature.denominator != 4 or time_signature.numerator != 4:
@@ -101,14 +99,11 @@ class MelodyExtractor:
         return True
 
 
-def extract_melodies(qnc, min_bars=1, gap_bars=1.0, max_bars=100, pad_end=True):
+def extract_melodies(qnc, min_bars=1, gap_bars=1.0, max_steps_truncate=None, pad_end=True):
     melodies = []
 
     instruments = set(n.instrument for n in qnc.notes)
     steps_per_bar = int(steps_per_bar_in_quantized_container(qnc))
-
-    # TODO make not hard coded, but this it the way it work in magenta
-    max_steps_truncate = max_bars * 16 if max_bars is not None else None
 
     for instrument in instruments:
         instrument_search_start_step = 0
@@ -150,12 +145,12 @@ def melody_to_midi(melody, velocity=80, program=0):
     instrument = pretty_midi.Instrument(program=program)
 
     notes = []
-    time_per_step = 1/8.0
+    time_per_step = 1 / 8.0
 
     pitch = MELODY_NOTE_OFF
     start_time = cur_time = 0.0
 
-    assert(MIN_MIDI_PITCH > MELODY_NOTE_OFF > MELODY_NO_EVENT)
+    assert (MIN_MIDI_PITCH > MELODY_NOTE_OFF > MELODY_NO_EVENT)
 
     # add MELODY_NOTE_OFF event at end of melody
     melody_copy = copy.copy(melody)
@@ -164,7 +159,7 @@ def melody_to_midi(melody, velocity=80, program=0):
     elif isinstance(melody_copy, np.ndarray):
         melody_copy = np.concatenate((melody_copy, [MELODY_NOTE_OFF]))
     else:
-        assert(False)
+        assert (False)
 
     for event in melody_copy:
         assert (event >= MELODY_NO_EVENT)

@@ -6,6 +6,13 @@ import torch
 from sacred.observers import FileStorageObserver
 
 
+def get_class_by_name(cls):
+    if cls is None:
+        return None
+    module_name, class_name = cls.rsplit(".", 1)
+    return getattr(importlib.import_module(module_name), class_name)
+
+
 def load_class_by_name(cls, *args, **kwargs):
     if cls is None:
         return None

@@ -12,8 +12,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from sacred import Experiment
 
-from music_vae.datasets.melody_dataset import FixedLengthMelodyDataset, MelodyEncode
-from music_vae.models.base import Seq2Seq, AnotherDecoder, Encoder
+from music_vae.datasets.melody_dataset import FixedLengthMelodyDataset, MelodyDataset, MapMelodyToIndex
+from music_vae.models.base import Seq2Seq, AnotherDecoder, Encoder, SimpleSeqDecoder
+from music_vae.models.hier import HierarchicalSeqDecoder, Conductor
 import music_vae.utils as utils
 from music_vae.logger import Logger
 
@@ -41,19 +42,22 @@ def evaluate(model, dl_eval, device, global_step, current_best, beta, free_bits)
 
     with torch.no_grad():
         for src in dl_eval:
+            # forward step ------------------------------------------------------------------------
             src = src.to(device)
+            output, mu, logvar, z = model(src, teacher_forcing_ratio=0.0)
 
-            output, mu, logvar, z = model(src, src, teacher_forcing_ratio=0.0)
+            # calculate loss/acc ------------------------------------------------------------------
             loss, r_loss, kl_loss, kl_div = criterion(output, src, mu, logvar, free_bits=free_bits, beta=beta)
             # noinspection PyUnresolvedReferences
             acc = torch.mean((output.detach().argmax(dim=-1) == src.detach()).float()).item()
 
+            # add statistics to logger  -----------------------------------------------------------
             logger.add_step(loss.detach().item(), r_loss, kl_loss, kl_div, acc, model.sampling_rate, beta,
                             mu.detach().cpu(), logvar.detach().cpu(), z.detach().cpu())
 
+    # log statistics ------------------------------------------------------------------------------
     loss = logger.metrics["loss"] / logger.metrics_cnt
     new_best = loss < current_best
-
     logger.print_metrics(global_step, time.time() - start_time, eval=True, new_best=new_best)
     logger.log_metrics("eval", global_step)
     logger.log_histograms("eval", global_step)
@@ -66,9 +70,11 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
           dl_eval=None, grad_clip=1.0, step=1, num_steps=40,
           evaluate_interval=1000, advanced_logging_interval=200, print_metrics_interval=200):
 
+    # get parameter adjustment functions ----------------------------------------------------------
     sampling_fn = utils.get_sampling_fn(**sampling_settings)
     beta_fn = utils.get_beta_fn(**beta_settings)
 
+    # init training ------------------------------------------------------------------------------
     logger.reset()
     start_time = time.time()
     model.train()
@@ -77,30 +83,32 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
     try:
         while True:
             for src in dl_train:
+                # forward step --------------------------------------------------------------------
                 src = src.to(device)
-
                 sampling_rate = sampling_fn(step)
-                output, mu, logvar, z = model(src, src, teacher_forcing_ratio=1.0 - sampling_rate)
+                output, mu, logvar, z = model(src, teacher_forcing_ratio=1.0 - sampling_rate)
+
+                # calculate loss/acc --------------------------------------------------------------
                 beta = beta_fn(step)
                 loss, r_loss, kl_loss, kl_div = criterion(output, src, mu, logvar, free_bits=free_bits, beta=beta)
 
                 # noinspection PyUnresolvedReferences
                 acc = torch.mean((output.detach().argmax(dim=-1) == src.detach()).float()).item()
 
+                # add statistics to logger  -------------------------------------------------------
                 logger.add_step(loss.detach().item(), r_loss, kl_loss, kl_div, acc, model.sampling_rate, beta,
                                 mu.detach().cpu(), logvar.detach().cpu(), z.detach().cpu())
 
+                # backward, grad clipping and optimizer step --------------------------------------
                 opt.zero_grad()
                 loss.backward()
 
-                # gradient clipping (and logging)
                 logger.log_grad_norm("train", step, model=model)
                 total_norm = nn.utils.clip_grad.clip_grad_norm_(model.parameters(), grad_clip)
                 logger.log_grad_norm("train", step, norm=total_norm)
-
                 opt.step()
 
-                # log statistics
+                # log statistics ------------------------------------------------------------------
                 if step % print_metrics_interval == 0:
                     end_time = time.time()
                     logger.print_metrics(step, end_time - start_time)
@@ -112,13 +120,17 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
                     logger.log_reconstruction("train", output.detach().cpu(), src.detach().cpu(), step)
 
                 if dl_eval is not None and step % evaluate_interval == 0:
+                    # evaluate model --------------------------------------------------------------
                     loss, new_best = evaluate(model, dl_eval, device, step,
                                               current_best, beta_settings["end_beta"], free_bits)
                     if new_best:
                         current_best = loss
-                    lr_scheduler.step(loss)
-                    logger.save_ckpt(model, opt, lr_scheduler, step, new_best)
 
+                    # update lr scheduler ---------------------------------------------------------
+                    lr_scheduler.step(loss)
+
+                    # save model and rest for training -------------------------------------------
+                    logger.save_ckpt(model, opt, lr_scheduler, step, new_best)
                     logger.reset()
                     start_time = time.time()
                     model.train()
@@ -133,41 +145,62 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
 
 @ex.capture
 def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, sampling_settings, free_bits,
-        encoder_params, decoder_params, learning_rate, melody_dir,
+        encoder_params, decoder_params, learning_rate, train_dir, eval_dir,
         evaluate_interval=1000, advanced_logging_interval=200, print_metrics_interval=200, ckpt_path=None):
     global logger
 
-    # define logger
+    # define dataset ------------------------------------------------------------------------------
+    # ds = FixedLengthMelodyDataset(melody_dir=melody_dir)
+    # dl_train = DataLoader(ds, batch_size=batch_size, num_workers=num_workers, drop_last=True, shuffle=True)
+
+    enc_mel_to_idx = MapMelodyToIndex(has_sos_token=False)
+    dec_mel_to_idx = MapMelodyToIndex(has_sos_token=True)
+
+    ds_train = MelodyDataset(midi_dir=train_dir, slice_bars=8, transforms=enc_mel_to_idx, train=True)
+    dl_train = DataLoader(ds_train, batch_size=batch_size, num_workers=num_workers, drop_last=True)
+
+    ds_eval = MelodyDataset(midi_dir=eval_dir, slice_bars=8, transforms=enc_mel_to_idx, train=False)
+    dl_eval = DataLoader(ds_eval, batch_size=batch_size, num_workers=num_workers, drop_last=False)
+    print(f"Train/Eval files: {len(ds_train.midi_files)} / {len(ds_eval.midi_files)}")
+
+    # define logger -------------------------------------------------------------------------------
     run_dir = utils.get_run_dir(_run)
     writer = SummaryWriter(log_dir=run_dir)
     ckpt_dir = Path(writer.log_dir) / "ckpt"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    logger = Logger(writer, ckpt_dir=ckpt_dir)
+    logger = Logger(writer, ckpt_dir=ckpt_dir, melody_dict=dec_mel_to_idx)
 
+    # define model --------------------------------------------------------------------------------
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # define model
-    enc = Encoder(z_size=z_size, **encoder_params)
-    dec = AnotherDecoder(z_size=z_size, **decoder_params)
-    model = Seq2Seq(enc, dec, device).to(device)
+    enc = Encoder(input_size=enc_mel_to_idx.dict_size(), z_size=z_size, **encoder_params)
 
-    # define optimizer
+    # flat model
+    # dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=z_size, **decoder_params)
+    # seq_decoder = SimpleSeqDecoder(dec, z_size=z_size, device=device)
+
+    # hier model
+    conductor = Conductor(hidden_size=2, n_layers=2, c_size=4)
+    dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=4, **decoder_params)
+    seq_decoder = HierarchicalSeqDecoder(conductor, dec, n_subsequences=8, z_size=z_size, device=device)
+
+    model = Seq2Seq(enc, seq_decoder, sos_token=dec_mel_to_idx.get_sos_token()).to(device)
+
+    # define optimizer ----------------------------------------------------------------------------
     opt = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
 
-    # define dataset
-    ds = FixedLengthMelodyDataset(melody_dir=melody_dir)
-    dl_train = DataLoader(ds, batch_size=batch_size, num_workers=num_workers, drop_last=True, shuffle=True)
-
-    # define scheduler
+    # define scheduler ----------------------------------------------------------------------------
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.01, patience=5, verbose=True)
 
+    # load checkpoint, if given -------------------------------------------------------------------
     step = 1
     if ckpt_path is not None:
         step = utils.load_ckpt(ckpt_path, model, opt, lr_scheduler, device) + 1
+        print(f"Loaded checkpoint from \"{ckpt_path}\" start from step {step}.")
 
-    # start train loop
+    # start train loop ----------------------------------------------------------------------------
     train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_settings, free_bits,
-          step=step, num_steps=num_steps, dl_eval=dl_train,
+          step=step, num_steps=num_steps, dl_eval=dl_eval,
           evaluate_interval=evaluate_interval,
           advanced_logging_interval=advanced_logging_interval,
           print_metrics_interval=print_metrics_interval)
@@ -177,16 +210,18 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
 def config():
     num_steps = 20_000
 
-    batch_size = 16
+    batch_size = 2
     num_workers = 0
 
-    ckpt_path: None
+    ckpt_path = None
 
     evaluate_interval = 1000
     advanced_logging_interval = 200
     print_metrics_interval = 200
 
-    melody_dir = r"C:\Users\yggdrasil\Studium Informatik\12Semester\Project\data\lmd_full_melody_128\0\0\\"
+    # melody_dir = r"C:\Users\yggdrasil\Studium Informatik\12Semester\Project\data\lmd_full_melody_128\0\0\\"
+    train_dir = "../data/lmd_full/train"
+    eval_dir = "../data/lmd_full/val"
 
     learning_rate = 1e-3
 
@@ -206,14 +241,12 @@ def config():
     free_bits = 0
 
     encoder_params = {
-        "input_size": 90,
         "embed_size": 12,
         "hidden_size": 16,
         "n_layers": 2
     }
 
     decoder_params = {
-        "output_size": 90,
         "embed_size": 12,
         "hidden_size": 64,
         "n_layers": 2

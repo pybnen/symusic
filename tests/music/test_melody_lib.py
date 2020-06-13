@@ -8,7 +8,8 @@ import magenta.music as mm
 from magenta.pipelines.melody_pipelines import extract_melodies
 
 from music_vae.music import melody_lib
-from music_vae.music.melody_lib import NoteContainer
+from music_vae.music.note_container_lib import split_on_time_signature_tempo_change, quantize_note_container
+from music_vae.music.note_container import NoteContainer
 
 MIDI_PATH_1 = r".\files\midi\midi1.mid"
 MIDI_PATH_2 = r".\files\midi\midi2.mid"
@@ -71,11 +72,29 @@ def magent_melody_extractor(midi_path, max_bars=100):
     return all_melodies
 
 
-def test_melody_extractor(midi_path, max_bars=100):
+def melody_extractor(midi_path, max_bars=100):
     melody_extractor = melody_lib.MelodyExtractor(max_bars=max_bars)
 
+    try:
+        pm = pretty_midi.PrettyMIDI(midi_path)
+    except (EOFError, OSError):
+        return []
+    note_containers = split_on_time_signature_tempo_change(NoteContainer.from_pretty_midi(pm))
+
+    total_melodies = []
+    for nc in note_containers:
+        melody_extractor.filter_notes(nc)
+        qnc = quantize_note_container(nc, melody_extractor.steps_per_quarter)
+        melodies = melody_lib.extract_melodies(qnc, gap_bars=melody_extractor.gap_bars,
+                                               max_steps_truncate=melody_extractor.max_steps_truncate,
+                                               pad_end=melody_extractor.pad_end)
+        total_melodies.extend(melodies)
+    return total_melodies
+
+
+def test_melody_extractor(midi_path, max_bars=100):
     magenta_melodies = magent_melody_extractor(midi_path, max_bars=max_bars)
-    melodies = melody_extractor.extract_melodies(midi_path)
+    melodies = melody_extractor(midi_path, max_bars=max_bars)
 
     assert len(magenta_melodies) == len(melodies)
 
@@ -86,7 +105,6 @@ def test_melody_extractor(midi_path, max_bars=100):
 
         for i in range(len(melody)):
             assert magenta_melody[i:i+128]._events == melody[i:i+128].events
-
 
 
 def test_melody_extractor_one():
@@ -105,5 +123,5 @@ def test_melody_extractor_many():
 
 if __name__ == "__main__":
     test_filter_notes()
-    #test_melody_extractor_one()
+    # test_melody_extractor_one()
     test_melody_extractor_many()

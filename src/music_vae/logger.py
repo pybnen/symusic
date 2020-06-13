@@ -30,9 +30,10 @@ def decode_melody(melody):
 
 
 class Logger:
-    def __init__(self, writer, ckpt_dir):
+    def __init__(self, writer, ckpt_dir, melody_dict):
         self.writer = writer
         self.ckpt_dir = ckpt_dir
+        self.melody_dict = melody_dict
         self.metrics = None
         self.metrics_tags = {
             "loss": "{}.loss",
@@ -108,7 +109,7 @@ class Logger:
         if model is not None:
             self.writer.add_scalar(f"{label}.grad_norm/encoder", utils.get_grad_norm(model.encoder.parameters()),
                                    global_step)
-            self.writer.add_scalar(f"{label}.grad_norm/decoder", utils.get_grad_norm(model.decoder.parameters()),
+            self.writer.add_scalar(f"{label}.grad_norm/decoder", utils.get_grad_norm(model.seq_decoder.parameters()),
                                    global_step)
         else:
             self.writer.add_scalar(f"{label}.grad_norm/global", norm, global_step)
@@ -121,11 +122,11 @@ class Logger:
         fig = plt.figure(figsize=(15, 8))
         for i in range(n_results):
             ax = fig.add_subplot(2, n_results, i + 1)
-            pp.plot_pianoroll(ax, melody_lib.melody_to_pianoroll(decode_melody(target_sequence[i])))
+            pp.plot_pianoroll(ax, melody_lib.melody_to_pianoroll(self.melody_dict.sequence_to_melody(target_sequence[i])))
             plt.title('Original melody')
 
             ax = fig.add_subplot(2, n_results, n_results + i + 1)
-            pp.plot_pianoroll(ax, melody_lib.melody_to_pianoroll(decode_melody(pred_sequence[i])))
+            pp.plot_pianoroll(ax, melody_lib.melody_to_pianoroll(self.melody_dict.sequence_to_melody(pred_sequence[i])))
             plt.title('Reconstruction')
 
         self.writer.add_figure(f"{label}.recon", fig, global_step)
