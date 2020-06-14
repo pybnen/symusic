@@ -24,18 +24,15 @@ class MelodyExtractor:
                  max_pitch=settings.PIANO_MAX_MIDI_PITCH,
                  valid_programs=settings.MELODY_PROGRAMS,
                  max_bars=100,
-                 slice_bars=2,
                  steps_per_quarter=4,
                  quarters_per_bar=4,
                  gap_bars=1.0,
-                 pad_end=True,
-                 max_melodies_per_sample=5):
+                 pad_end=True):
 
         self.min_pitch = min_pitch
         self.max_pitch = max_pitch
         self.valid_programs = valid_programs
         self.max_bars = max_bars
-        self.slice_bars = slice_bars
         self.steps_per_quarter = steps_per_quarter
         self.gap_bars = gap_bars
         self.pad_end = pad_end

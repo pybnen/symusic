@@ -153,7 +153,7 @@ def test_quantize_note_container():
 
 def test_split_and_quantize():
     for midi_path in midi_big_paths:
-        print(midi_path)
+        # print(midi_path)
         ns = convert_midi("", '', midi_path)
         note_sequences = sequences_lib.split_note_sequence_on_time_changes(ns)
 

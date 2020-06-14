@@ -75,6 +75,10 @@ class MelodyIterator(object):
         self.max_melodies_per_sample = max_melodies_per_sample
         self.steps_per_bar = melody_extractor.steps_per_bar
 
+    def reset(self):
+        self.file_idx = 0
+        self.melody_stack = []
+
     def __iter__(self):
         return self
 
@@ -100,11 +104,18 @@ class MelodyIterator(object):
             while len(self.melody_stack) == 0 and self.file_idx < len(self.midi_files):
                 # get next file
                 file = self.midi_files[self.file_idx]
-                self.file_idx += 1
 
                 # try to extract melodies from file and put melodies on stack
                 melodies = self.extract_melodies(file)
                 self.melody_stack.extend(melodies)
+
+                if len(melodies) == 0:
+                    # if midi doesn't contain any melodies remove from array
+                    # NOTE: this doesn't work as intended, because a new MelodyIterator is created every time
+                    #   the __iter__ method of MelodyDataset is called.
+                    del self.midi_files[self.file_idx]
+                else:
+                    self.file_idx += 1
 
             if len(self.melody_stack) == 0:
                 # no more melodies on stack and files exhausted

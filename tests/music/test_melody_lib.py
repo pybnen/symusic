@@ -113,7 +113,7 @@ def test_melody_extractor_one():
 
 def test_melody_extractor_many():
     for midi_path in midi_paths:
-        print(midi_path)
+        # print(midi_path)
         test_melody_extractor(midi_path, max_bars=100)
         test_melody_extractor(midi_path, max_bars=None)
 
