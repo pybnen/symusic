@@ -68,7 +68,7 @@ def evaluate(model, dl_eval, device, global_step, current_best, beta, free_bits)
 
 def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_settings, free_bits,
           dl_eval=None, grad_clip=1.0, step=1, num_steps=40,
-          evaluate_interval=1000, advanced_logging_interval=200, print_metrics_interval=200):
+          evaluate_interval=1000, advanced_interval=200, print_interval=200):
 
     # get parameter adjustment functions ----------------------------------------------------------
     sampling_fn = utils.get_sampling_fn(**sampling_settings)
@@ -79,6 +79,7 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
     start_time = time.time()
     model.train()
     current_best = float("inf")
+    epoch = 1
 
     try:
         while True:
@@ -109,18 +110,18 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
                 opt.step()
 
                 # log statistics ------------------------------------------------------------------
-                if step % print_metrics_interval == 0:
+                if step % print_interval == 0:
                     end_time = time.time()
                     logger.print_metrics(step, end_time - start_time)
                     start_time = end_time
                 logger.log_metrics("train", step)
 
-                if step % advanced_logging_interval == 0:
+                if step % advanced_interval == 0:
                     logger.log_histograms("train", step)
                     logger.log_reconstruction("train", output.detach().cpu(), src.detach().cpu(), step)
 
+                # evaluate model ------------------------------------------------------------------
                 if dl_eval is not None and step % evaluate_interval == 0:
-                    # evaluate model --------------------------------------------------------------
                     loss, new_best = evaluate(model, dl_eval, device, step,
                                               current_best, beta_settings["end_beta"], free_bits)
                     if new_best:
@@ -129,7 +130,7 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
                     # update lr scheduler ---------------------------------------------------------
                     lr_scheduler.step(loss)
 
-                    # save model and rest for training -------------------------------------------
+                    # save model and reset for training -------------------------------------------
                     logger.save_ckpt(model, opt, lr_scheduler, step, new_best)
                     logger.reset()
                     start_time = time.time()
@@ -139,14 +140,19 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
                     raise StopIteration
 
                 step += 1
+
+            print(f"--- Step {step}: Iterated through all midi files for the {epoch} time.")
+            epoch += 1
+
     except StopIteration:
         print("Done")
 
 
 @ex.capture
 def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, sampling_settings, free_bits,
-        encoder_params, decoder_params, learning_rate, train_dir, eval_dir,
-        evaluate_interval=1000, advanced_logging_interval=200, print_metrics_interval=200, ckpt_path=None):
+        encoder_params, decoder_params, learning_rate, train_dir, eval_dir, slice_bar,
+        lr_scheduler_factor, lr_scheduler_patience,
+        evaluate_interval=1000, advanced_interval=200, print_interval=200, ckpt_path=None):
     global logger
 
     # define dataset ------------------------------------------------------------------------------
@@ -156,10 +162,10 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
     enc_mel_to_idx = MapMelodyToIndex(has_sos_token=False)
     dec_mel_to_idx = MapMelodyToIndex(has_sos_token=True)
 
-    ds_train = MelodyDataset(midi_dir=train_dir, slice_bars=8, transforms=enc_mel_to_idx, train=True)
+    ds_train = MelodyDataset(midi_dir=train_dir, slice_bars=slice_bar, transforms=enc_mel_to_idx, train=True)
     dl_train = DataLoader(ds_train, batch_size=batch_size, num_workers=num_workers, drop_last=True)
 
-    ds_eval = MelodyDataset(midi_dir=eval_dir, slice_bars=8, transforms=enc_mel_to_idx, train=False)
+    ds_eval = MelodyDataset(midi_dir=eval_dir, slice_bars=slice_bar, transforms=enc_mel_to_idx, train=False)
     dl_eval = DataLoader(ds_eval, batch_size=batch_size, num_workers=num_workers, drop_last=False)
     print(f"Train/Eval files: {len(ds_train.midi_files)} / {len(ds_eval.midi_files)}")
 
@@ -190,7 +196,10 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
     opt = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
 
     # define scheduler ----------------------------------------------------------------------------
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.01, patience=5, verbose=True)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
+                                                        factor=lr_scheduler_factor,
+                                                        patience=lr_scheduler_patience,
+                                                        verbose=True)
 
     # load checkpoint, if given -------------------------------------------------------------------
     step = 1
@@ -202,8 +211,8 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
     train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_settings, free_bits,
           step=step, num_steps=num_steps, dl_eval=dl_eval,
           evaluate_interval=evaluate_interval,
-          advanced_logging_interval=advanced_logging_interval,
-          print_metrics_interval=print_metrics_interval)
+          advanced_interval=advanced_interval,
+          print_interval=print_interval)
 
 
 @ex.config
@@ -216,14 +225,18 @@ def config():
     ckpt_path = None
 
     evaluate_interval = 1000
-    advanced_logging_interval = 200
-    print_metrics_interval = 200
+    advanced_interval = 200
+    print_interval = 200
 
     # melody_dir = r"C:\Users\yggdrasil\Studium Informatik\12Semester\Project\data\lmd_full_melody_128\0\0\\"
-    train_dir = "../data/lmd_full/train"
+    train_dir = "../data/lmd_full/test"
     eval_dir = "../data/lmd_full/val"
 
+    slice_bar = 8
+
     learning_rate = 1e-3
+    lr_scheduler_factor = 0.5
+    lr_scheduler_patience = 3
 
     z_size = 32
 
