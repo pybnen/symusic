@@ -151,7 +151,8 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
 @ex.capture
 def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, sampling_settings, free_bits,
         encoder_params, decoder_params, learning_rate, train_dir, eval_dir, slice_bar,
-        lr_scheduler_factor, lr_scheduler_patience,
+        lr_scheduler_factor, lr_scheduler_patience, use_hier,
+        conductor_params=None, c_size=None, n_subsequences=None,
         evaluate_interval=1000, advanced_interval=200, print_interval=200, ckpt_path=None):
     global logger
 
@@ -181,14 +182,17 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
 
     enc = Encoder(input_size=enc_mel_to_idx.dict_size(), z_size=z_size, **encoder_params)
 
-    # flat model
-    # dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=z_size, **decoder_params)
-    # seq_decoder = SimpleSeqDecoder(dec, z_size=z_size, device=device)
+    if not use_hier:
+        # flat model ------------------------------------------------------------------------------
+        dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=z_size, **decoder_params)
+        seq_decoder = SimpleSeqDecoder(dec, z_size=z_size, device=device)
+    else:
+        # hier model ------------------------------------------------------------------------------
+        assert conductor_params is not None and c_size is not None and n_subsequences is not None
 
-    # hier model
-    conductor = Conductor(hidden_size=2, n_layers=2, c_size=4)
-    dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=4, **decoder_params)
-    seq_decoder = HierarchicalSeqDecoder(conductor, dec, n_subsequences=8, z_size=z_size, device=device)
+        conductor = Conductor(c_size=c_size, **conductor_params)
+        dec = AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=c_size, **decoder_params)
+        seq_decoder = HierarchicalSeqDecoder(conductor, dec, n_subsequences=n_subsequences, z_size=z_size, device=device)
 
     model = Seq2Seq(enc, seq_decoder, sos_token=dec_mel_to_idx.get_sos_token()).to(device)
 
@@ -258,6 +262,14 @@ def config():
         "hidden_size": 16,
         "n_layers": 2
     }
+
+    use_hier = False
+
+    c_size = None
+
+    n_subsequences = None
+
+    conductor_params = None
 
     decoder_params = {
         "embed_size": 12,
