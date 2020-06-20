@@ -55,7 +55,9 @@ class HierarchicalSeqDecoder(nn.Module):
         self.z_size = z_size
         self.device = device
         self.output_size = decoder.output_size
+
         self.sampling_rate = 0.0
+        self.output_tokens = None
 
         n_states = conductor.hidden_size * conductor.n_layers * 2
         self.fc_state = nn.Sequential(
@@ -69,37 +71,58 @@ class HierarchicalSeqDecoder(nn.Module):
         hidden, cell = states.view(batch_size, self.conductor.n_layers, 2, -1).permute(2, 1, 0, 3).contiguous()
         return hidden, cell
 
-    def forward(self, trg, z, teacher_forcing_ratio=0.5, initial_input=None):
-        # trg [batch size, trg len]
+    def forward(self, z, length=None, trg=None, teacher_forcing_ratio=0.5, initial_input=None):
+        assert trg is not None or (initial_input is not None and length is not None)
         # z [batch size, z size]
+        # trg [batch size, trg len]
 
-        batch_size, trg_len = trg.shape
+        batch_size = z.shape[0]
+        trg_len = trg.shape[1] if trg is not None else length
+        if trg is None:
+            assert teacher_forcing_ratio == 0.0
+
         output_size = self.output_size
 
         # tensor to store decoder outputs
         outputs = torch.zeros(batch_size, trg_len, output_size).to(self.device)
 
+        # contains output tokens instead of logits
+        self.output_tokens = torch.zeros(batch_size, trg_len, dtype=torch.int64).to(self.device)
+
         # z is used to init hidden states of decoder
         hidden, cell = self.cell_state_from_context(z)
 
-        subsequences = trg.view(batch_size, self.n_subsequences, -1)
-        subsequence_length = subsequences.shape[-1]
+        if trg is None:
+            assert length % self.n_subsequences == 0
+            subsequences = None
+            subsequence_length = int(length / self.n_subsequences)
+        else:
+            subsequences = trg.view(batch_size, self.n_subsequences, -1)
+            subsequence_length = subsequences.shape[-1]
 
         start_idx = 0
         total_sampling_rate = 0.0
         for t in range(self.n_subsequences):
             # get conductor embedding for subsequence (use 1 as input)
-            input = torch.ones((batch_size, 1))
+            input = torch.ones((batch_size, 1)).to(self.device)
             c, (hidden, cell) = self.conductor(input, (hidden, cell))
 
             # use sequence decoder to get output for subsequence, using current conductor embedding
-            subseq = subsequences[:, t]
-            decoder_outputs = self.seq_decoder(subseq, c, teacher_forcing_ratio=teacher_forcing_ratio,
+            if subsequences is not None:
+                subseq = subsequences[:, t]
+            else:
+                subseq = None
+
+            decoder_outputs = self.seq_decoder(c, length=subsequence_length,
+                                               trg=subseq,
+                                               teacher_forcing_ratio=teacher_forcing_ratio,
                                                initial_input=initial_input)
+
             total_sampling_rate += self.seq_decoder.sampling_rate
             outputs[:, start_idx:start_idx+subsequence_length] = decoder_outputs
+            self.output_tokens[:, start_idx:start_idx+subsequence_length] = self.seq_decoder.output_tokens
             start_idx += subsequence_length
-            initial_input = decoder_outputs[:, -1].detach().argmax(1)
+            initial_input = self.seq_decoder.output_tokens[:, -1].detach()
 
         self.sampling_rate = total_sampling_rate / self.n_subsequences
         return outputs

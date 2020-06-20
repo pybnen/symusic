@@ -42,13 +42,13 @@ def assert_input_order(seq_decoder, trg, z):
 
     # tf 1.0 no initial input, thus decoder should always see input from target
     decoder.reset()
-    outputs = seq_decoder(trg, z, teacher_forcing_ratio=1.)
+    outputs = seq_decoder(z, trg=trg, teacher_forcing_ratio=1.)
     assert torch.all(trg == decoder.input())
     assert seq_decoder.sampling_rate == 0.0
 
     # tf 0.0 no initial input, because no initial input was given, the decoder should only see the first elem of target
     decoder.reset()
-    outputs = seq_decoder(trg, z, teacher_forcing_ratio=0.)
+    outputs = seq_decoder(z, trg=trg, teacher_forcing_ratio=0.)
     first_input = trg[:, :1].repeat(1, seq_len)
     assert torch.all(first_input == decoder.input())
     assert torch.any(trg != decoder.input())
@@ -57,14 +57,14 @@ def assert_input_order(seq_decoder, trg, z):
     # ft 1.0 with initial input, initial input should be ignored
     decoder.reset()
     initial_input = trg[:, 0] + 1
-    outputs = seq_decoder(trg, z, teacher_forcing_ratio=1., initial_input=initial_input)
+    outputs = seq_decoder(z, trg=trg, teacher_forcing_ratio=1., initial_input=initial_input)
     assert torch.all(trg == decoder.input())
     assert seq_decoder.sampling_rate == 0.0
 
     # ft 0.0 with initial input, initial input should be used instead of target
     decoder.reset()
     initial_input = trg[:, 0] + 1
-    outputs = seq_decoder(trg, z, teacher_forcing_ratio=0., initial_input=initial_input)
+    outputs = seq_decoder(z, trg=trg, teacher_forcing_ratio=0., initial_input=initial_input)
     assert torch.all(initial_input.unsqueeze(dim=1).repeat(1, seq_len) == decoder.input())
     assert torch.any(trg != decoder.input())
     assert seq_decoder.sampling_rate == 1.0
@@ -116,11 +116,15 @@ def assert_seq_decoder_output_shape(seq_decoder, z_size):
     for i in range(150):
         input = Categorical(probs=torch.ones((batch_size, seq_len, input_size))).sample()
 
-        outputs = seq_decoder(input, z, teacher_forcing_ratio=1.0)
+        outputs = seq_decoder(z, trg=input, teacher_forcing_ratio=1.0)
         assert outputs.shape == torch.Size([batch_size, seq_len, output_size])
+        # TODO this is only correct for greedy sampling
+        assert torch.all(outputs.argmax(dim=-1) == seq_decoder.output_tokens)
 
-        outputs = seq_decoder(input, z, teacher_forcing_ratio=0.0)
+        outputs = seq_decoder(z, trg=input, teacher_forcing_ratio=0.0)
         assert outputs.shape == torch.Size([batch_size, seq_len, output_size])
+        # TODO this is only correct for greedy sampling
+        assert torch.all(outputs.argmax(dim=-1) == seq_decoder.output_tokens)
 
     # check if checkpoint still works
     device = torch.device("cpu")

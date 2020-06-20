@@ -179,7 +179,9 @@ class SimpleSeqDecoder(nn.Module):
         self.device = device
         self.z_size = z_size
         self.output_size = decoder.output_size
+
         self.sampling_rate = 0.0
+        self.output_tokens = None
 
         n_states = decoder.hidden_size * decoder.n_layers * 2
         self.fc_state = nn.Sequential(
@@ -193,32 +195,44 @@ class SimpleSeqDecoder(nn.Module):
         hidden, cell = states.view(batch_size, self.decoder.n_layers, 2, -1).permute(2, 1, 0, 3).contiguous()
         return hidden, cell
 
-    def forward(self, trg, z, teacher_forcing_ratio=0.5, initial_input=None):
-        # trg [batch size, trg len]
-        # z [batch size, z size]
+    def get_next_input(self, output):
+        """output logits from network"""
+        return output.detach().argmax(1)
 
-        batch_size, trg_len = trg.shape
+    def forward(self, z, length=None, trg=None, teacher_forcing_ratio=0.5, initial_input=None):
+        assert trg is not None or (initial_input is not None and length is not None)
+        # z [batch size, z size]
+        # trg None or[batch size, trg len]
+
+        batch_size = z.shape[0]
+        trg_len = trg.shape[1] if trg is not None else length
+        if trg is None:
+            assert teacher_forcing_ratio == 0.0
+
         output_size = self.output_size
 
         # tensor to store decoder outputs
         outputs = torch.zeros(batch_size, trg_len, output_size).to(self.device)
 
+        # contains output tokens instead of logits
+        self.output_tokens = torch.zeros(batch_size, trg_len, dtype=torch.int64).to(self.device)
+
         # z is used to init hidden states of decoder
         hidden, cell = self.cell_state_from_context(z)
 
-        top1 = initial_input
+        next_input = initial_input
         sampling_cnt = 0.
         for t in range(0, trg_len):
-            assert top1 is not None or t == 0
+            assert next_input is not None or t == 0
 
             # get input for decoder
             teacher_force = torch.rand(1).item() < teacher_forcing_ratio
-            if teacher_force or top1 is None:
+            if teacher_force or next_input is None:
                 # use target token as input
                 input = trg[:, t]
             else:
                 # use predicted token
-                input = top1
+                input = next_input
                 sampling_cnt += 1
 
             # insert input token embedding, previous hidden and previous cell states
@@ -229,7 +243,8 @@ class SimpleSeqDecoder(nn.Module):
             outputs[:, t] = output
 
             # get the highest predicted token from our predictions
-            top1 = output.detach().argmax(1)
+            next_input = self.get_next_input(output.detach())
+            self.output_tokens[:, t] = next_input.detach()
 
         self.sampling_rate = sampling_cnt / trg_len
         return outputs
@@ -281,7 +296,7 @@ class Seq2Seq(nn.Module):
 
         # trg = [batch size, src len]
 
-        outputs = self.seq_decoder(trg, z, teacher_forcing_ratio=teacher_forcing_ratio)
+        outputs = self.seq_decoder(z, trg=trg, teacher_forcing_ratio=teacher_forcing_ratio)
 
         self.sampling_rate = self.seq_decoder.sampling_rate
         return outputs, mu, logvar, z
