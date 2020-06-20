@@ -69,6 +69,14 @@ def assert_input_order(seq_decoder, trg, z):
     assert torch.any(trg != decoder.input())
     assert seq_decoder.sampling_rate == 1.0
 
+    # ft 0.0 no target sequence
+    decoder.reset()
+    initial_input = trg[:, 0] + 1
+    outputs = seq_decoder(z, length=seq_len, teacher_forcing_ratio=0., initial_input=initial_input)
+    assert torch.all(initial_input.unsqueeze(dim=1).repeat(1, seq_len) == decoder.input())
+    assert torch.any(trg != decoder.input())
+    assert seq_decoder.sampling_rate == 1.0
+
 
 def test_simple_seq_decoder_input():
     z_size = 2
@@ -113,7 +121,7 @@ def assert_seq_decoder_output_shape(seq_decoder, z_size):
     output_size = seq_decoder.output_size
     z = torch.randn((batch_size, z_size))
 
-    for i in range(150):
+    for i in range(25):
         input = Categorical(probs=torch.ones((batch_size, seq_len, input_size))).sample()
 
         outputs = seq_decoder(z, trg=input, teacher_forcing_ratio=1.0)
@@ -123,6 +131,13 @@ def assert_seq_decoder_output_shape(seq_decoder, z_size):
 
         outputs = seq_decoder(z, trg=input, teacher_forcing_ratio=0.0)
         assert outputs.shape == torch.Size([batch_size, seq_len, output_size])
+        # TODO this is only correct for greedy sampling
+        assert torch.all(outputs.argmax(dim=-1) == seq_decoder.output_tokens)
+
+        # no target sequence
+        outputs = seq_decoder(z, length=128, teacher_forcing_ratio=0.0,
+                              initial_input=torch.tensor(0).repeat(batch_size))
+        assert outputs.shape == torch.Size([batch_size, 128, output_size])
         # TODO this is only correct for greedy sampling
         assert torch.all(outputs.argmax(dim=-1) == seq_decoder.output_tokens)
 
