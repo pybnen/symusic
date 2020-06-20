@@ -7,10 +7,13 @@ MIN_MIDI_PITCH = settings.MIN_MIDI_PITCH
 
 
 class Melody:
-    def __init__(self, events=None, start_step=0, steps_per_bar=None, steps_per_quarter=None):
+    def __init__(self, events=None, start_step=0, steps_per_bar=None, steps_per_quarter=None,
+                 instrument=None, program=0):
         self.events = events or []
         self.steps_per_bar = steps_per_bar
         self.steps_per_quarter = steps_per_quarter
+        self.instrument = instrument
+        self.program = program
 
         self.start_step = start_step
         self.end_step = start_step + len(self.events)
@@ -38,7 +41,9 @@ class Melody:
             return type(self)(events=events,
                               start_step=self.start_step + (item.start or 0),
                               steps_per_bar=self.steps_per_bar,
-                              steps_per_quarter=self.steps_per_quarter)
+                              steps_per_quarter=self.steps_per_quarter,
+                              instrument=self.instrument,
+                              program=self.program)
 
     def add_note(self, pitch, start_step, end_step):
         assert end_step > start_step
@@ -84,6 +89,7 @@ class Melody:
     def from_quantized_note_container(cls, qnc, instrument, search_start_step, gap_bars, filter_drums, pad_end=True):
         melody = cls()
 
+        melody.instrument = instrument
         melody.steps_per_bar = steps_per_bar = int(steps_per_bar_in_quantized_container(qnc))
         melody.steps_per_quarter = qnc.steps_per_quarter
 
@@ -94,6 +100,10 @@ class Melody:
 
         if not notes:
             return None
+
+        programs = set([n.program for n in notes])
+        assert len(programs) == 1
+        melody.program = list(programs)[0]
 
         # music start at beginning of a bar
         start_step = notes[0].quantized_start_step
