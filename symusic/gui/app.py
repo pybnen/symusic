@@ -5,7 +5,7 @@ from pathlib import Path
 
 from symusic.musicvae.models.trained import TrainedModel
 from symusic.musicvae.datasets.melody_dataset import MapMelodyToIndex
-from gui.globals import ckpt_path, audio_filesystem_dir
+from symusic.gui.globals import ckpt_path, audio_filesystem_dir
 
 
 files = list(glob(audio_filesystem_dir + "*"))
