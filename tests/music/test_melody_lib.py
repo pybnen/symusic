@@ -1,23 +1,21 @@
-from glob import glob
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pretty_midi
 
 from magenta.music import sequences_lib
 from magenta.scripts.convert_dir_to_note_sequences import convert_midi
 import magenta.models.music_vae.data as music_vae_data
 import magenta.music as mm
-from magenta.pipelines.melody_pipelines import extract_melodies
 
-from music_vae.music import melody_lib
-from music_vae.music.note_container_lib import split_on_time_signature_tempo_change, quantize_note_container
-from music_vae.music.note_container import NoteContainer
+import symusic.music.melody_lib as melody_lib
+import symusic.music.note_container_lib as nc_lib
+from symusic.music.note_container import NoteContainer
 
-MIDI_PATH_1 = r".\files\midi\midi1.mid"
-MIDI_PATH_2 = r".\files\midi\midi2.mid"
-MIDI_PATH_3 = r".\files\midi\midi3.mid"
-MIDI_PATH_4 = r".\files\midi\midi4.mid"
+# noinspection PyUnresolvedReferences
+import common
 
-midi_paths = glob("./files/midi/*.mid")
-midi_big_paths = glob("./files/midi_big/*.mid")
 
 def test_filter_notes():
     me = melody_lib.MelodyExtractor(min_pitch=60, max_pitch=80)
@@ -28,7 +26,7 @@ def test_filter_notes():
     def cnt_invalid_programs(nc):
         return len([n for n in nc.notes if me.valid_programs is not None and n.program not in me.valid_programs])
 
-    for midi_path in midi_paths:
+    for midi_path in common.midi_paths:
         pm = pretty_midi.PrettyMIDI(midi_path)
         note_container = NoteContainer.from_pretty_midi(pm)
 
@@ -79,12 +77,12 @@ def melody_extractor(midi_path, max_bars=100):
         pm = pretty_midi.PrettyMIDI(midi_path)
     except (EOFError, OSError):
         return []
-    note_containers = split_on_time_signature_tempo_change(NoteContainer.from_pretty_midi(pm))
+    note_containers = nc_lib.split_on_time_signature_tempo_change(NoteContainer.from_pretty_midi(pm))
 
     total_melodies = []
     for nc in note_containers:
         melody_extractor.filter_notes(nc)
-        qnc = quantize_note_container(nc, melody_extractor.steps_per_quarter)
+        qnc = nc_lib.quantize_note_container(nc, melody_extractor.steps_per_quarter)
         melodies = melody_lib.extract_melodies(qnc, gap_bars=melody_extractor.gap_bars,
                                                max_steps_truncate=melody_extractor.max_steps_truncate,
                                                pad_end=melody_extractor.pad_end)
@@ -92,7 +90,7 @@ def melody_extractor(midi_path, max_bars=100):
     return total_melodies
 
 
-def test_melody_extractor(midi_path, max_bars=100):
+def assert_melody_extractor(midi_path, max_bars=100):
     magenta_melodies = magent_melody_extractor(midi_path, max_bars=max_bars)
     melodies = melody_extractor(midi_path, max_bars=max_bars)
 
@@ -108,20 +106,19 @@ def test_melody_extractor(midi_path, max_bars=100):
 
 
 def test_melody_extractor_one():
-    test_melody_extractor(MIDI_PATH_3)
+    assert_melody_extractor(common.MIDI_PATH_3, max_bars=100)
 
 
 def test_melody_extractor_many():
-    for midi_path in midi_paths:
-        # print(midi_path)
-        test_melody_extractor(midi_path, max_bars=100)
-        test_melody_extractor(midi_path, max_bars=None)
+    for midi_path in common.midi_paths:
+        assert_melody_extractor(midi_path, max_bars=100)
+        assert_melody_extractor(midi_path, max_bars=None)
 
-    test_melody_extractor(r".\files\midi_warning\1a2c37d1ef02797d25ac9488b3a0b871.mid", max_bars=100)
-    test_melody_extractor(r".\files\midi_warning\1a7a85e46e7742a7a40a18f327a757fa.mid", max_bars=100)
+    for midi_path in common.midi_warning_paths:
+        assert_melody_extractor(midi_path, max_bars=100)
 
 
 if __name__ == "__main__":
     test_filter_notes()
-    # test_melody_extractor_one()
+    test_melody_extractor_one()
     test_melody_extractor_many()

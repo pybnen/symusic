@@ -1,0 +1,55 @@
+{
+    "num_steps": 160000,
+    "batch_size": 64,
+    "num_workers": 4,
+
+    "evaluate_interval": 4000,
+    "advanced_interval": 1000,
+    "print_interval": 400,
+
+    "train_dir": "../data/lmd_full_split/train",
+    "eval_dir": "../data/lmd_full_split/val",
+
+    "slice_bar": 8,
+
+    "learning_rate": 1e-3,
+    "lr_scheduler_factor": 0.5,
+    "lr_scheduler_patience": 3,
+
+    "z_size": 512,
+
+    "sampling_settings": {
+        "schedule": "inverse_sigmoid",
+        "rate": 7500
+    },
+
+    "beta_settings": {
+        "start_beta": 0.0,
+        "end_beta": 0.2,
+        "duration": 160000
+    },
+    "free_bits": 128,
+
+    "encoder_params": {
+        "embed_size": 12,
+        "hidden_size": 2048,
+        "n_layers": 2
+    },
+
+    "use_hier": true,
+
+    "c_size": 512,
+
+    "n_subsequences": 8,
+
+    "conductor_params": {
+        "hidden_size": 1024,
+        "n_layers": 2
+    },
+
+    "decoder_params": {
+        "embed_size": 12,
+        "hidden_size": 1024,
+        "n_layers": 2
+    }
+}

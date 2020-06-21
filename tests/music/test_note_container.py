@@ -1,4 +1,7 @@
-from glob import glob
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pickle
 import numpy as np
 import pretty_midi
@@ -7,19 +10,11 @@ from magenta.music import sequences_lib
 from magenta.scripts.convert_dir_to_note_sequences import convert_midi
 import magenta.music as mm
 
-from music_vae.music.note_container import NoteContainer
-from music_vae.music.note_container_lib import (split_on_time_signature_tempo_change,
-                                                quantize_note_container,
-                                                MultipleTimeSignatureError)
+import symusic.music.note_container_lib as nc_lib
+from  symusic.music.note_container import NoteContainer
 
-MIDI_PATH_1 = r".\files\midi\midi1.mid"
-MIDI_PATH_2 = r".\files\midi\midi2.mid"
-MIDI_PATH_3 = r".\files\midi\midi3.mid"
-MIDI_PATH_4 = r".\files\midi\midi4.mid"
-
-midi_paths = glob("./files/midi/*.mid")
-midi_big_paths = glob("./files/midi_big/*.mid")
-
+# noinspection PyUnresolvedReferences
+import common
 
 def assert_nc_ns(nc, ns, quantized=False):
     assert nc.total_time == ns.total_time
@@ -74,7 +69,7 @@ def create_simple_midi(tempo=120.):
 
 
 def test_note_container():
-    for midi_path in midi_paths:
+    for midi_path in common.midi_paths:
         pm = pretty_midi.PrettyMIDI(midi_path)
         nc = NoteContainer.from_pretty_midi(pm)
         for nc_tempo, pm_time, pm_tempo in zip(nc.tempos, *pm.get_tempo_changes()):
@@ -109,26 +104,26 @@ def test_note_container():
 
 
 def test_split_on_time_signature_tempo_change():
-    midi_path = "./files/midi/3a0eee9e3a8e59524c36e6f8e4a0c698.mid"
+    midi_path = common.MIDI_PATH_5
     pm = pretty_midi.PrettyMIDI(midi_path)
     nc = NoteContainer.from_pretty_midi(pm)
 
-    split_ncs = split_on_time_signature_tempo_change(nc)
+    split_ncs = nc_lib.split_on_time_signature_tempo_change(nc)
     # target_split_times = [0.0, 0.410958, 26.7122, 27.328707, 58.850897925]
     assert len(split_ncs) == 4
 
-    for midi_path in midi_paths:
+    for midi_path in common.midi_paths:
         pm = pretty_midi.PrettyMIDI(midi_path)
         nc = NoteContainer.from_pretty_midi(pm)
         total_notes = len(nc.notes)
-        split_ncs = split_on_time_signature_tempo_change(nc)
+        split_ncs = nc_lib.split_on_time_signature_tempo_change(nc)
         # this must not always hold but is a good sanity check
         assert total_notes == np.sum([len(n.notes) for n in split_ncs])
 
 
-def test_quantize(pm, target_steps):
+def assert_quantize(pm, target_steps):
     nc = NoteContainer.from_pretty_midi(pm)
-    qnc = quantize_note_container(nc, 4)
+    qnc = nc_lib.quantize_note_container(nc, 4)
 
     for (start, end), note in zip(target_steps, qnc.notes):
         assert note.quantized_start_step == start
@@ -136,23 +131,23 @@ def test_quantize(pm, target_steps):
 
 
 def test_quantize_note_container():
-    test_quantize(create_simple_midi(120.), [(0, 8), (8, 16), (12, 20), (41, 43)])
-    test_quantize(create_simple_midi(140.), [(0, 9), (9, 19), (14, 23), (48, 50)])
+    assert_quantize(create_simple_midi(120.), [(0, 8), (8, 16), (12, 20), (41, 43)])
+    assert_quantize(create_simple_midi(140.), [(0, 9), (9, 19), (14, 23), (48, 50)])
 
-    pm = pretty_midi.PrettyMIDI(MIDI_PATH_1)
-    with open("./files/targets/midi1_target_steps.pkl", "rb") as f:
+    pm = pretty_midi.PrettyMIDI(common.MIDI_PATH_1)
+    with open(common.midi1_target_steps_path, "rb") as f:
         target_steps = pickle.load(f)
-    test_quantize(pm, target_steps)
+    assert_quantize(pm, target_steps)
 
     try:
-        test_quantize(pretty_midi.PrettyMIDI("./files/midi/3a0eee9e3a8e59524c36e6f8e4a0c698.mid"), None)
+        assert_quantize(pretty_midi.PrettyMIDI(common.MIDI_PATH_5), None)
         assert False
     except Exception as e:
-        assert isinstance(e, MultipleTimeSignatureError)
+        assert isinstance(e, nc_lib.MultipleTimeSignatureError)
 
 
 def test_split_and_quantize():
-    for midi_path in midi_big_paths:
+    for midi_path in common.midi_big_paths:
         # print(midi_path)
         ns = convert_midi("", '', midi_path)
         note_sequences = sequences_lib.split_note_sequence_on_time_changes(ns)
@@ -160,12 +155,12 @@ def test_split_and_quantize():
         pm = pretty_midi.PrettyMIDI(midi_path)
         nc = NoteContainer.from_pretty_midi(pm)
 
-        split_ncs = split_on_time_signature_tempo_change(nc)
+        split_ncs = nc_lib.split_on_time_signature_tempo_change(nc)
 
         for nc, ns in zip(split_ncs, note_sequences):
             assert_nc_ns(nc, ns)
 
-            qnc = quantize_note_container(nc, 4)
+            qnc = nc_lib.quantize_note_container(nc, 4)
             qns = mm.quantize_note_sequence(ns, 4)
             assert_nc_ns(qnc, qns, quantized=True)
 
