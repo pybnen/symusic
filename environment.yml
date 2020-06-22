@@ -60,12 +60,15 @@ dependencies:
     - six==1.15.0
     - smmap==3.0.4
     - tensorboard==1.15.0
+    - tqdm==4.46.1
     - werkzeug==1.0.1
     - wrapt==1.12.1
     - zipp==3.1.0
+    
     # This package didn't work on my local machine so I provided a hot-fix, I think it is a windows issue.
     # - midi2audio==0.1.1
     - -e git+https://github.com/pybnen/midi2audio@windows-hotfix#egg=midi2audio
+    
     # The following two packages cannot be installed, cannot find a version that satisfies the requirements.
     # - torch==1.4.0+cpu
     # - torchvision==0.5.0+cpu
