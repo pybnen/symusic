@@ -6,10 +6,11 @@ from dash.exceptions import PreventUpdate
 
 import numpy as np
 
+import symusic.gui.globals as globals
 from symusic.gui.globals import midi_dropdown_options
 from symusic.gui.components import melody_selector
 from symusic.gui.utils import midi_to_melody, melody_to_graph, melody_to_audio
-from symusic.gui.app import app, model
+from symusic.gui.app import app
 
 
 def melody_walk_view():
@@ -62,6 +63,6 @@ def melody_walk_interpolate(n_clicks, num_steps, temperature,
         raise PreventUpdate
 
     num_steps += 2
-    interpolated_melodies, _ = model.interpolate(melody1, melody2, num_steps, length=32, temperature=temperature)
+    interpolated_melodies, _ = globals.model.interpolate(melody1, melody2, num_steps, length=32, temperature=temperature)
     melody = interpolated_melodies.reshape(-1)
     return melody_to_graph(melody), melody_to_audio(melody, midi_program1)

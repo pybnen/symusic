@@ -1,6 +1,21 @@
+# ignore experiment runs
 runs/
 
-data/lmd_full
+# ignore data...
+data/*
+
+# ...except
+!data/tests
+!data/download_and_split_dataset.sh
+!data/split_dataset.py
+
+# ignore src
+# this is created by conda when making an environment by environment.yml,
+# because it contains packages from github repos
+src/
+
+# ignore temporary audio files created by the dash app
+symusic/gui/tmp_audio
 
 
 # Created by https://www.gitignore.io/api/python,pycharm+all,intellij+all,jupyternotebooks,visualstudiocode

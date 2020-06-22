@@ -1,16 +1,47 @@
 import os
+from glob import glob
+from pathlib import Path
+import pandas as pd
+
+import torch
+
+from symusic.musicvae.models.trained import TrainedModel
+from symusic.musicvae.datasets.melody_dataset import MapMelodyToIndex
+
+
+def set_ckpt(ckpt_path, ckpt_dir):
+    global tsne_data, model
+    ckpt_stem = Path(ckpt_path).stem
+
+    print(f"Load ckpt \"{ckpt_stem}\"")
+
+    tsne_data_path = Path(ckpt_dir) / "tsne" / (ckpt_stem + ".pkl")
+    assert tsne_data_path.is_file()
+    tsne_data = pd.read_pickle(str(tsne_data_path))
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    melody_dict = MapMelodyToIndex()
+    model = TrainedModel(ckpt_path, melody_dict, device)
+
+
+def setup(ckpt_dir):
+    ckpt_paths = glob(ckpt_dir + "/ckpts/*.pth")
+    assert len(ckpt_paths) > 0
+    ckpt_path = ckpt_paths[0]
+
+    set_ckpt(ckpt_path, ckpt_dir)
+
 
 assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./assets"))
 
 midi_assets = ["mel_2bar-bass.mid", "mel_2bar-mel.mid", "sample1.mid", "sample2.mid", "sample3.mid", "sample4.mid"]
 midi_dropdown_options = {midi: os.path.join(assets_dir, "midis", midi) for midi in midi_assets}
 
-ckpt_path = os.path.join(assets_dir, "ckpts/8bar_flat.pth")
-
-tsne_data_path = os.path.join(assets_dir, "tsne/8bar_tsne_data_2.pkl")
-
-audio_filesystem_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./audio")) + "/"
+audio_filesystem_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./tmp_audio")) + "/"
 audio_download_url = "/audio/"
 
 STEPS_PER_BAR = 16
 MELODY_LENGTH = 8 * STEPS_PER_BAR
+
+tsne_data = None
+model = None

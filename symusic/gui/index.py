@@ -1,3 +1,5 @@
+import sys
+
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
@@ -56,5 +58,16 @@ def download(path):
     return send_from_directory(globals.audio_filesystem_dir, path)
 
 
-if __name__ == "__main__":
+def main(ckpt_dir):
+    # setup ckpt_dir
+    globals.setup(ckpt_dir)
+
+    # run server
     app.run_server(debug=True, dev_tools_hot_reload=False)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        print("Please provide ckpt dir")
+    else:
+        main(sys.argv[1])

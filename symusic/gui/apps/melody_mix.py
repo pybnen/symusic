@@ -7,10 +7,11 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
+import symusic.gui.globals as globals
 from symusic.gui.globals import midi_dropdown_options, MELODY_LENGTH
 from symusic.gui.components import melody_selector, melody_result_view
 from symusic.gui.utils import melody_to_graph, midi_to_melody, melody_to_audio
-from symusic.gui.app import app, model
+from symusic.gui.app import app
 
 N_SLIDER = 10
 Z_SLIDER_MIN = -5.0
@@ -80,14 +81,14 @@ def melody_mixer_init_z(n_clicks1, n_clicks2, midi_path, track_idx, start_bar):
     ctx = dash.callback_context
 
     if not ctx.triggered or ctx.triggered[0]['prop_id'].rsplit('.', 2)[0] == "init-z-random-btn":
-        z = np.round(np.random.randn(model.z_size).clip(Z_SLIDER_MIN, Z_SLIDER_MAX), Z_SLIDER_PRECISION).tolist()
+        z = np.round(np.random.randn(globals.model.z_size).clip(Z_SLIDER_MIN, Z_SLIDER_MAX), Z_SLIDER_PRECISION).tolist()
         global_midi_program = 0
     else:
         melody, midi_program = midi_to_melody(midi_path, track_idx, start_bar=start_bar)
         if melody is None:
             raise PreventUpdate
         # z, mu, logvar
-        _, z, _ = model.encode(melody.reshape(1, -1))
+        _, z, _ = globals.model.encode(melody.reshape(1, -1))
         z = z[0].detach().cpu().tolist()
         global_midi_program = midi_program
     global_z = z
@@ -111,12 +112,12 @@ def melody_result_update_view(n_clicks, values, temperature):
     if n_clicks is None or temperature <= 0:
         raise PreventUpdate
 
-    if N_SLIDER < model.z_size:
+    if N_SLIDER < globals.model.z_size:
         values.extend(global_z[N_SLIDER:])
 
     z = torch.tensor(values).view(1, -1)
     # z = torch.tensor(global_z).view(1, -1)
 
-    melodies, _ = model.decode(z, length=MELODY_LENGTH, temperature=temperature)
+    melodies, _ = globals.model.decode(z, length=MELODY_LENGTH, temperature=temperature)
     melody = melodies[0]
     return melody_to_graph(melody), melody_to_audio(melody, midi_program=global_midi_program)
