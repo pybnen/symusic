@@ -9,27 +9,22 @@ from symusic.musicvae.models.trained import TrainedModel
 from symusic.musicvae.datasets.melody_dataset import MapMelodyToIndex
 
 
-def set_ckpt(ckpt_path, ckpt_dir):
+def setup(ckpt_dir):
     global tsne_data, model
-    ckpt_stem = Path(ckpt_path).stem
 
-    print(f"Load ckpt \"{ckpt_stem}\"")
+    print(f"Load ckpt \"{Path(ckpt_dir).stem}\"")
 
-    tsne_data_path = Path(ckpt_dir) / "tsne" / (ckpt_stem + ".pkl")
-    assert tsne_data_path.is_file()
+    ckpt_path = Path(ckpt_dir) / "model.pth"
+    tsne_data_path = Path(ckpt_dir) / "tsne_data.pkl"
+    assert ckpt_path.is_file() and tsne_data_path.is_file()
+
+    # set tsne data
     tsne_data = pd.read_pickle(str(tsne_data_path))
 
+    # load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     melody_dict = MapMelodyToIndex()
-    model = TrainedModel(ckpt_path, melody_dict, device)
-
-
-def setup(ckpt_dir):
-    ckpt_paths = glob(ckpt_dir + "/ckpts/*.pth")
-    assert len(ckpt_paths) > 0
-    ckpt_path = ckpt_paths[0]
-
-    set_ckpt(ckpt_path, ckpt_dir)
+    model = TrainedModel(str(ckpt_path), melody_dict, device)
 
 
 assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./assets"))

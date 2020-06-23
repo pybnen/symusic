@@ -10,7 +10,7 @@ from symusic.gui.utils import melody_to_graph, melody_to_audio
 from symusic.gui.app import app
 import plotly.express as px
 
-color_dropdown_options = ["acc_arr", "kl_loss", "r_loss"]
+color_dropdown_options = ["acc", "kl_loss", "r_loss"]
 
 
 def melody_space_view():

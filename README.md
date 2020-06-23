@@ -32,7 +32,7 @@ conda activate symusic
 
 ### Manual installation
 
-If the `environment.yml` didn't work you can try to create a conda environment manually with the following commands.
+If the `environment.yml` didn't work you can try to create a conda environment manually with the following commands:
 
 ```bash
 conda create -n symusic python=3.7.6
@@ -44,6 +44,7 @@ pip install matplotlib==3.1.1
 pip install pypianoroll==0.5.2
 pip install dash==1.12.0
 pip install pandas==0.25.3
+pip install scikit-learn==0.23.1
 pip install midi2audio
 ```
 
@@ -61,7 +62,7 @@ so I provided a hotfix for this problem: https://github.com/pybnen/midi2audio.
 ### Run tests
 
 In order to run the provided tests,
-the following commands have to be executed at the base directory of the repository.
+the following commands have to be executed at the base directory of the repository:
 
 ```bash
 # install symusic, to make the package available to the tests
