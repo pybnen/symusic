@@ -1,19 +1,15 @@
-# smg-gui
+# MusicVAE Visualisation
 
-This repository provides a GUI to play around and visualise results of the music-vae reimplementation.
+Start the [Dash](https://plotly.com/dash/)  server:
 
+```bash
+python -m symusic.gui.index /path/to/checkpoint/dir
+```
 
-## Requirements
+## Checkpoint
 
-dash
+Download a checkpoint from my train run [here](link_to_checkpoint).
 
-UPDATE this section after development.
-
-
-## Run GUI
-
-ADD description on how to start the gui.
-
-## Notes/Problems
-
-
+To create your own checkpoint
+- trian
+- run the tsne script
