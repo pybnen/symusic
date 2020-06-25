@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
 
-from symusic.musicvae.models.base import SimpleSeqDecoder, SimpleDecoder, AnotherDecoder
-from symusic.musicvae.models.hier import HierarchicalSeqDecoder, Conductor
+import symusic.musicvae.models.base as base
+import symusic.musicvae.models.seq_decoder as seq_decoder_module
+from symusic.musicvae.models.seq_decoder import seq_decoder_factory
 
 
+# define a fake decoder and add to decoder factory ------------------------------------------------
 class FakeDecoder(nn.Module):
     """Fake decoder will return one-hot encoded input and keeps
     track of input"""
@@ -24,7 +26,8 @@ class FakeDecoder(nn.Module):
     def forward(self, input: torch.tensor, state, unused2):
         batch_size = input.shape[0]
         self.inputs.append(input)
-        return self.embedding(input), state
+        # return log of one-hot encoding of input
+        return torch.log(self.embedding(input)), state
 
     def input(self):
         return torch.stack(self.inputs, dim=1)
@@ -33,10 +36,20 @@ class FakeDecoder(nn.Module):
         self.inputs = []
 
 
+def build_fake_decoder(output_size, **_ignore):
+    return FakeDecoder(output_size)
+
+
+base.decoder_factory.register_builder("fake", build_fake_decoder)
+
+
+# start with tests --------------------------------------------------------------------------------
 def assert_input_order(seq_decoder, trg, z):
     if hasattr(seq_decoder, "decoder"):
+        # simple/sample seq decoder
         decoder = seq_decoder.decoder
     else:
+        # hier seq decoder
         decoder = seq_decoder.seq_decoder.decoder
     seq_len = trg.shape[1]
 
@@ -78,17 +91,52 @@ def assert_input_order(seq_decoder, trg, z):
     assert seq_decoder.sampling_rate == 1.0
 
 
-def test_simple_seq_decoder_input():
+def test_greedy_seq_decoder_input():
     z_size = 2
     batch_size = 1
     seq_len = 10
     output_size = 90
 
     device = torch.device("cpu")
-    decoder = FakeDecoder(output_size)
-    seq_decoder = SimpleSeqDecoder(decoder, z_size=z_size, device=device)
-    z = torch.randn((batch_size, z_size))
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "device": device,
+        "decoder_args": {
+            "key": "fake",
+            "params": {}
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("greedy", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.GreedySeqDecoder)
 
+    z = torch.randn((batch_size, z_size))
+    for _ in range(100):
+        trg = torch.randint(0, 50, size=(batch_size, seq_len))
+        assert_input_order(seq_decoder, trg, z)
+
+
+def test_sample_seq_decoder_input():
+    z_size = 2
+    batch_size = 1
+    seq_len = 10
+    output_size = 90
+
+    device = torch.device("cpu")
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "device": device,
+        "temperature": 0.5,
+        "decoder_args": {
+            "key": "fake",
+            "params": {}
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("sample", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.SampleSeqDecoder)
+
+    z = torch.randn((batch_size, z_size))
     for _ in range(100):
         trg = torch.randint(0, 50, size=(batch_size, seq_len))
         assert_input_order(seq_decoder, trg, z)
@@ -101,14 +149,35 @@ def test_hier_seq_decoder_input():
     output_size = 90
 
     device = torch.device("cpu")
-    conductor = Conductor(hidden_size=1, c_size=1, n_layers=1)
-    decoder = FakeDecoder(output_size)
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "n_subsequences": 2,
+        "device": device,
+        "conductor_args": {
+            "key": "conductor",
+            "params": {
+                "hidden_size": 1,
+                "c_size": 1,
+                "n_layers": 1
+            }
+        },
+        "seq_decoder_args": {
+            "key": "greedy",
+            "params": {
+                "z_size": 1,
+                "device": device,
+                "decoder_args": {
+                    "key": "fake",
+                    "params": {}
+                }
+            }
+        },
+    }
+    seq_decoder = seq_decoder_factory.create("hier", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.HierarchicalSeqDecoder)
 
-    seq_decoder = HierarchicalSeqDecoder(conductor, decoder,
-                                         n_subsequences=2,
-                                         z_size=z_size, device=device)
     z = torch.randn((batch_size, z_size))
-
     for _ in range(100):
         trg = torch.randint(0, 50, size=(batch_size, seq_len))
         assert_input_order(seq_decoder, trg, z)
@@ -152,7 +221,7 @@ def assert_seq_decoder_output_shape(seq_decoder, z_size):
         assert kwargs1 == kwargs2
 
 
-def test_simple_seq_decoder_output_shape():
+def test_greedy_seq_decoder_output_shape():
     z_size = 9
     hidden_size = 10
     embed_size = 12
@@ -160,15 +229,80 @@ def test_simple_seq_decoder_output_shape():
     n_layers = 2
 
     device = torch.device("cpu")
-    dec = SimpleDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                         n_layers=n_layers, dropout_prob=0.2)
-
-    seq_decoder = SimpleSeqDecoder(dec, z_size, device)
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "device": device,
+        "decoder_args": {
+            "key": "simple",
+            "params": {
+                "embed_size": embed_size,
+                "hidden_size": hidden_size,
+                "n_layers": n_layers,
+                "dropout_prob": 0.2
+            }
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("greedy", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.GreedySeqDecoder)
+    assert isinstance(seq_decoder.decoder, base.SimpleDecoder)
     assert_seq_decoder_output_shape(seq_decoder, z_size)
 
-    dec = AnotherDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                          z_size=z_size, n_layers=n_layers, dropout_prob=0.3)
-    seq_decoder = SimpleSeqDecoder(dec, z_size, device)
+    params["decoder_args"] = {
+        "key": "another",
+        "params": {
+            "embed_size": embed_size,
+            "hidden_size": hidden_size,
+            "n_layers": n_layers,
+            "dropout_prob": 0.3,
+            "z_size": z_size
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("greedy", **params)
+    assert isinstance(seq_decoder.decoder, base.AnotherDecoder)
+    assert_seq_decoder_output_shape(seq_decoder, z_size)
+
+
+def test_sample_seq_decoder_output_shape():
+    z_size = 9
+    hidden_size = 10
+    embed_size = 12
+    output_size = 90
+    n_layers = 2
+
+    device = torch.device("cpu")
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "device": device,
+        "temperature": 1.e-8,
+        "decoder_args": {
+            "key": "simple",
+            "params": {
+                "embed_size": embed_size,
+                "hidden_size": hidden_size,
+                "n_layers": n_layers,
+                "dropout_prob": 0.2
+            }
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("sample", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.SampleSeqDecoder)
+    assert isinstance(seq_decoder.decoder, base.SimpleDecoder)
+    assert_seq_decoder_output_shape(seq_decoder, z_size)
+
+    params["decoder_args"] = {
+        "key": "another",
+        "params": {
+            "embed_size": embed_size,
+            "hidden_size": hidden_size,
+            "n_layers": n_layers,
+            "dropout_prob": 0.3,
+            "z_size": z_size
+        }
+    }
+    seq_decoder = seq_decoder_factory.create("sample", **params)
+    assert isinstance(seq_decoder.decoder, base.AnotherDecoder)
     assert_seq_decoder_output_shape(seq_decoder, z_size)
 
 
@@ -182,21 +316,68 @@ def test_hier_seq_decoder_output_shape():
     c_size = 44
 
     device = torch.device("cpu")
-    conductor = Conductor(23, c_size, n_layers)
-    dec = SimpleDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                        n_layers=n_layers, dropout_prob=0.2)
-    seq_decoder = HierarchicalSeqDecoder(conductor, dec, n_subseq, z_size, device)
+    params = {
+        "output_size": output_size,
+        "z_size": z_size,
+        "n_subsequences": n_subseq,
+        "device": device,
+        "conductor_args": {
+            "key": "conductor",
+            "params": {
+                "hidden_size": 23,
+                "c_size": c_size,
+                "n_layers": n_layers
+            }
+        },
+        "seq_decoder_args": {
+            "key": "greedy",
+            "params": {
+                "z_size": c_size,
+                "decoder_args": {
+                   "key": "simple",
+                    "params": {
+                        "embed_size": embed_size,
+                        "hidden_size": hidden_size,
+                        "n_layers": n_layers,
+                        "dropout_prob": 0.2
+                    }
+                }
+            }
+        },
+    }
+
+    seq_decoder = seq_decoder_factory.create("hier", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.HierarchicalSeqDecoder)
+    assert isinstance(seq_decoder.seq_decoder, seq_decoder_module.GreedySeqDecoder)
+    assert isinstance(seq_decoder.seq_decoder.decoder, base.SimpleDecoder)
     assert_seq_decoder_output_shape(seq_decoder, z_size)
 
-    dec = AnotherDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                         z_size=c_size, n_layers=n_layers, dropout_prob=0.3)
-    seq_decoder = HierarchicalSeqDecoder(conductor, dec, n_subseq, z_size, device)
+    params["seq_decoder_args"]["params"]["decoder_args"] = {
+        "key": "another",
+        "params": {
+            "embed_size": embed_size,
+            "hidden_size": hidden_size,
+            "n_layers": n_layers,
+            "dropout_prob": 0.3,
+            "z_size": c_size
+        }
+    }
+
+    seq_decoder = seq_decoder_factory.create("hier", **params)
+    assert isinstance(seq_decoder, seq_decoder_module.HierarchicalSeqDecoder)
+    assert isinstance(seq_decoder.seq_decoder, seq_decoder_module.GreedySeqDecoder)
+    assert isinstance(seq_decoder.seq_decoder.decoder, base.AnotherDecoder)
     assert_seq_decoder_output_shape(seq_decoder, z_size)
 
 
 if __name__ == "__main__":
-    test_simple_seq_decoder_input()
-    test_simple_seq_decoder_output_shape()
+    test_greedy_seq_decoder_input()
+    test_greedy_seq_decoder_output_shape()
+
+    test_sample_seq_decoder_input()
+    test_sample_seq_decoder_output_shape()
 
     test_hier_seq_decoder_input()
     test_hier_seq_decoder_output_shape()
+
+

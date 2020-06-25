@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import symusic.musicvae.utils as utils
+import symusic.musicvae.object_factory as object_factory
 
-
+# encoder definitions ------------------------------------------------------------------------------
 class Encoder(nn.Module):
 
     def __init__(self, input_size, embed_size, hidden_size, z_size, n_layers, dropout_prob=.0):
@@ -59,6 +60,7 @@ class Encoder(nn.Module):
         return ckpt
 
 
+# decoder definitions -----------------------------------------------------------------------------
 class SimpleDecoder(nn.Module):
     def __init__(self, output_size, embed_size, hidden_size, n_layers, dropout_prob=.0):
         super().__init__()
@@ -168,102 +170,63 @@ class AnotherDecoder(nn.Module):
         return ckpt
 
 
-class SimpleSeqDecoder(nn.Module):
-
-    def __init__(self, decoder, z_size, device):
+class Conductor(nn.Module):
+    def __init__(self, hidden_size, c_size, n_layers):
         super().__init__()
 
-        self.decoder = decoder
-        self.device = device
-        self.z_size = z_size
-        self.output_size = decoder.output_size
+        self.hidden_size = hidden_size
+        self.c_size = c_size
+        self.n_layers = n_layers
 
-        self.sampling_rate = 0.0
-        self.output_tokens = None
+        self.rnn = nn.LSTM(input_size=1, hidden_size=hidden_size, num_layers=n_layers)
 
-        n_states = decoder.hidden_size * decoder.n_layers * 2
-        self.fc_state = nn.Sequential(
-            nn.Linear(z_size, n_states),
-            nn.Tanh()
-        )
+        self.fc_out = nn.Linear(hidden_size, c_size)
 
-    def cell_state_from_context(self, z):
-        batch_size = z.shape[0]
-        states = self.fc_state(z)
-        hidden, cell = states.view(batch_size, self.decoder.n_layers, 2, -1).permute(2, 1, 0, 3).contiguous()
-        return hidden, cell
+    def forward(self, input: torch.Tensor, state: torch.Tensor):
+        hidden, cell = state
 
-    def get_next_input(self, output):
-        """output logits from network"""
-        return output.detach().argmax(1)
+        # input [batch size, 1]
+        # hidden [n layers, batch size, hidden size]
+        # cell [n layers, batch size, hidden size]
 
-    def forward(self, z, length=None, trg=None, teacher_forcing_ratio=0.5, initial_input=None):
-        assert trg is not None or (initial_input is not None and length is not None)
-        # z [batch size, z size]
-        # trg None or[batch size, trg len]
+        output, (hidden, cell) = self.rnn(input.unsqueeze(dim=0), (hidden, cell))
 
-        batch_size = z.shape[0]
-        trg_len = trg.shape[1] if trg is not None else length
-        if trg is None:
-            assert teacher_forcing_ratio == 0.0
+        # output [1, batch_size, hidden size]
 
-        output_size = self.output_size
+        output = self.fc_out(output.squeeze(dim=0))
 
-        # tensor to store decoder outputs
-        outputs = torch.zeros(batch_size, trg_len, output_size).to(self.device)
+        # output [batch size, c size]
 
-        # contains output tokens instead of logits
-        self.output_tokens = torch.zeros(batch_size, trg_len, dtype=torch.int64).to(self.device)
-
-        # z is used to init hidden states of decoder
-        hidden, cell = self.cell_state_from_context(z)
-
-        next_input = initial_input
-        sampling_cnt = 0.
-        for t in range(0, trg_len):
-            assert next_input is not None or t == 0
-
-            # get input for decoder
-            teacher_force = torch.rand(1).item() < teacher_forcing_ratio
-            if teacher_force or next_input is None:
-                # use target token as input
-                input = trg[:, t]
-            else:
-                # use predicted token
-                input = next_input
-                sampling_cnt += 1
-
-            # insert input token embedding, previous hidden and previous cell states
-            # receive output tensor (predictions) and new hidden and cell states
-            output, (hidden, cell) = self.decoder(input, (hidden, cell), z.detach())
-
-            # place predictions in a tensor holding predictions for each token
-            outputs[:, t] = output
-
-            # get the highest predicted token from our predictions
-            next_input = self.get_next_input(output.detach())
-            self.output_tokens[:, t] = next_input.detach()
-
-        self.sampling_rate = sampling_cnt / trg_len
-        return outputs
+        return output, (hidden, cell)
 
     def create_ckpt(self):
         ckpt = {"clazz": ".".join([self.__module__, self.__class__.__name__]),
-                "decoder": self.decoder.create_ckpt(),
-                "kwargs": dict(z_size=self.z_size)}
+                "kwargs": dict(hidden_size=self.hidden_size,
+                               c_size=self.c_size,
+                               n_layers=self.n_layers)}
         return ckpt
 
-    @classmethod
-    def load_from_ckpt(cls, ckpt, device, state_dict=None):
-        dec = utils.load_class_by_name(ckpt["decoder"]["clazz"], **ckpt["decoder"]["kwargs"])
 
-        seq_decoder = cls(decoder=dec, device=device, **ckpt["kwargs"])
-        if state_dict is not None:
-            seq_decoder.load_state_dict(state_dict)
-
-        return seq_decoder
+# decoder builder definitions ---------------------------------------------------------------------
+def build_simple_decoder(output_size, embed_size, hidden_size, n_layers, dropout_prob=.0, **_ignore):
+    return SimpleDecoder(output_size, embed_size, hidden_size, n_layers, dropout_prob)
 
 
+def build_another_decoder(output_size, embed_size, hidden_size, z_size, n_layers, dropout_prob=.0, **_ignore):
+    return AnotherDecoder(output_size, embed_size, hidden_size, z_size, n_layers, dropout_prob)
+
+
+def build_conductor(hidden_size, c_size, n_layers, **_ignore):
+    return Conductor(hidden_size, c_size, n_layers)
+
+
+decoder_factory = object_factory.ObjectFactory()
+decoder_factory.register_builder("simple", build_simple_decoder)
+decoder_factory.register_builder("another", build_another_decoder)
+decoder_factory.register_builder("conductor", build_conductor)
+
+
+# seq2seq definitions -----------------------------------------------------------------------------
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, seq_decoder, sos_token):
         super().__init__()

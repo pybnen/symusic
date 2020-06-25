@@ -14,7 +14,8 @@ from sacred import Experiment
 
 import symusic.musicvae.datasets.melody_dataset as melody_dataset
 import symusic.musicvae.models.base as base
-import symusic.musicvae.models.hier as hier
+from symusic.musicvae.models.seq_decoder import seq_decoder_factory
+
 import symusic.musicvae.utils as utils
 from symusic.musicvae.logger import Logger
 
@@ -150,7 +151,7 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
 
 @ex.capture
 def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, sampling_settings, free_bits,
-        encoder_params, decoder_params, learning_rate, train_dir, eval_dir, slice_bar,
+        encoder_params, seq_decoder_args, learning_rate, train_dir, eval_dir, slice_bar,
         lr_scheduler_factor, lr_scheduler_patience, use_hier,
         conductor_params=None, c_size=None, n_subsequences=None,
         evaluate_interval=1000, advanced_interval=200, print_interval=200, ckpt_path=None):
@@ -180,21 +181,26 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     enc = base.Encoder(input_size=enc_mel_to_idx.dict_size(), z_size=z_size, **encoder_params)
+    params = {**seq_decoder_args["params"], "output_size": dec_mel_to_idx.dict_size(), "device": device}
+    seq_decoder = seq_decoder_factory.create(seq_decoder_args["key"], **params)
 
-    if not use_hier:
-        # flat model ------------------------------------------------------------------------------
-        dec = base.AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=z_size, **decoder_params)
-        seq_decoder = base.SimpleSeqDecoder(dec, z_size=z_size, device=device)
-    else:
-        # hier model ------------------------------------------------------------------------------
-        assert conductor_params is not None and c_size is not None and n_subsequences is not None
-
-        conductor = hier.Conductor(c_size=c_size, **conductor_params)
-        dec = base.AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=c_size, **decoder_params)
-        seq_decoder = hier.HierarchicalSeqDecoder(conductor, dec, n_subsequences=n_subsequences, z_size=z_size,
-                                                  device=device)
-
+    # ---------------------------------------------
+    # if not use_hier:
+    #     # flat model ------------------------------------------------------------------------------
+    #     dec = base.AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=z_size, **decoder_params)
+    #     seq_decoder = base.SimpleSeqDecoder(dec, z_size=z_size, device=device)
+    # else:
+    #     # hier model ------------------------------------------------------------------------------
+    #     assert conductor_params is not None and c_size is not None and n_subsequences is not None
+    #
+    #     conductor = hier.Conductor(c_size=c_size, **conductor_params)
+    #     dec = base.AnotherDecoder(output_size=dec_mel_to_idx.dict_size(), z_size=c_size, **decoder_params)
+    #     seq_decoder = hier.HierarchicalSeqDecoder(conductor, dec, n_subsequences=n_subsequences, z_size=z_size,
+    #                                               device=device)
+    # ----------------------------------------------
     model = base.Seq2Seq(enc, seq_decoder, sos_token=dec_mel_to_idx.get_sos_token()).to(device)
+
+    print(model)
 
     # define optimizer ----------------------------------------------------------------------------
     opt = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))

@@ -6,10 +6,13 @@ import symusic.musicvae.models.base as base
 
 class TrainedModel:
 
-    def __init__(self, ckpt_path, melody_dict, device):
+    def __init__(self, ckpt_path, melody_dict, device, use_sample_decoder=False):
         with open(ckpt_path, 'rb') as file:
             ckpt = torch.load(file, map_location=device)
             model_ckpt = ckpt["model_kwargs"]
+            if use_sample_decoder:
+                self._update_sample_sample_decoder(model_ckpt)
+
             state_dict = ckpt["model_state_dict"]
 
         self.model = base.Seq2Seq.load_from_ckpt(model_ckpt, device, state_dict=state_dict).to(device)
@@ -18,6 +21,24 @@ class TrainedModel:
         # self.model.decoder.set_sampling_probability(1.0)
         self.z_size = self.model.encoder.z_size
         self.output_size = self.model.output_size
+
+    def _update_sample_sample_decoder(self, model_ckpt):
+        if model_ckpt["seq_decoder"]["clazz"] == "symusic.musicvae.models.seq_decoder.GreedySeqDecoder":
+            model_ckpt["seq_decoder"]["clazz"] = "symusic.musicvae.models.seq_decoder.SampleSeqDecoder"
+
+        elif model_ckpt["seq_decoder"]["clazz"] == "symusic.musicvae.models.seq_decoder.HierarchicalSeqDecoder":
+            if model_ckpt["seq_decoder"]["seq_decoder"]["clazz"] == "symusic.musicvae.models.seq_decoder.GreedySeqDecoder":
+                model_ckpt["seq_decoder"]["seq_decoder"]["clazz"] =  "symusic.musicvae.models.seq_decoder.SampleSeqDecoder"
+
+    def _set_temperature(self, temperature):
+        bottom_seq_decoder = self.model.seq_decoder
+        while not hasattr(bottom_seq_decoder, "decoder"):
+            bottom_seq_decoder = bottom_seq_decoder.seq_decoder
+
+        assert bottom_seq_decoder is not None
+        if hasattr(bottom_seq_decoder, "temperature"):
+            bottom_seq_decoder.temperature = temperature
+
 
     def melodies_to_tensors(self, melodies):
         #  use melody dict to translate melodies to tensors
@@ -63,7 +84,7 @@ class TrainedModel:
         return self.tensors_to_melodies(output_tokens), outputs.detach()
 
     def decode_to_tensors(self, z, length, temperature=1.0):
-        # self.model.decoder.set_temperature(temperature)
+        self._set_temperature(temperature)
         self.model.eval()
         with torch.no_grad():
             batch_size = z.shape[0]

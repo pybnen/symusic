@@ -24,7 +24,7 @@ def setup(ckpt_dir):
     # load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     melody_dict = MapMelodyToIndex()
-    model = TrainedModel(str(ckpt_path), melody_dict, device)
+    model = TrainedModel(str(ckpt_path), melody_dict, device, use_sample_decoder=True)
 
 
 assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./assets"))

@@ -3,6 +3,7 @@ import numpy as np
 from torch.distributions.one_hot_categorical import Categorical
 
 from symusic.musicvae.models.base import Encoder, SimpleDecoder, AnotherDecoder
+import symusic.musicvae.models.base as base
 
 
 def test_encoder():
@@ -36,8 +37,11 @@ def test_simple_decoder():
     hidden_size = 10
     embed_size = 12
 
-    dec = SimpleDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                        n_layers=2, dropout_prob=0.2)
+    dec = base.decoder_factory.create("simple",
+                                      **dict(output_size=output_size, n_layers=2, dropout_prob=0.2,
+                                             hidden_size=hidden_size,
+                                             embed_size=embed_size))
+    assert isinstance(dec, base.SimpleDecoder)
 
     input = Categorical(probs=torch.ones((batch_size, output_size))).sample()
 
@@ -73,8 +77,11 @@ def test_another_decoder():
     hidden_size = 10
     embed_size = 12
 
-    dec = AnotherDecoder(output_size=output_size, embed_size=embed_size, hidden_size=hidden_size,
-                         z_size=z_size, n_layers=2, dropout_prob=0.3)
+    dec = base.decoder_factory.create("another",
+                                      **dict(output_size=output_size, n_layers=2, dropout_prob=0.3,
+                                             hidden_size=hidden_size, z_size=z_size,
+                                             embed_size=embed_size))
+    assert isinstance(dec, base.AnotherDecoder)
 
     input = Categorical(probs=torch.ones((batch_size, output_size))).sample()
     z = torch.randn((batch_size, z_size))
@@ -105,7 +112,34 @@ def test_another_decoder():
     assert kwargs["dropout_prob"] == 0.3
 
 
+def test_conductor():
+    batch_size = 8
+    c_size = 90
+    hidden_size = 10
+    n_layers = 3
+
+    conductor = base.decoder_factory.create("conductor",
+                                            **dict(hidden_size=hidden_size, c_size=c_size, n_layers=n_layers))
+    assert isinstance(conductor, base.Conductor)
+
+    input = torch.ones((batch_size, 1))
+
+    hidden, cell = torch.zeros(2, conductor.n_layers, batch_size, hidden_size)
+    output, (hidden, cell) = conductor(input, (hidden, cell))
+
+    assert output.shape == torch.Size([batch_size, c_size])
+    assert hidden.shape == torch.Size([conductor.n_layers, batch_size, hidden_size])
+    assert cell.shape == torch.Size([conductor.n_layers, batch_size, hidden_size])
+
+    ckpt = conductor.create_ckpt()
+    kwargs = ckpt["kwargs"]
+    assert kwargs["hidden_size"] == hidden_size
+    assert kwargs["c_size"] == c_size
+    assert kwargs["n_layers"] == n_layers
+
+
 if __name__ == "__main__":
     test_encoder()
     test_simple_decoder()
     test_another_decoder()
+    test_conductor()
