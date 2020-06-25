@@ -8,6 +8,10 @@ python -m symusic.musicvae.train with /path/to/config -F /path/to/log/runs
 
 ## Configs
 
+Example configurations can be seen here:
+- [flat config](/symusic/musicvae/config_flat_8bar.json)
+- [hierarchical config](/symusic/musicvae/config_hier_8bar.json)
+
 **Data Loader**  
 `batch_size`: Size of batch returned by the data loader  
 `num_workers`: Number of data loader worker processes  
@@ -23,26 +27,69 @@ python -m symusic.musicvae.train with /path/to/config -F /path/to/log/runs
 
 `z_size`  Size of the z space  
 
+**Encoder**  
 `encoder_params`             Parameter of encoder  
 `encoder_params.embed_size`  Output size of embedding  
 `encoder_params.hidden_size` Hidden size  
 `encoder_params.n_layers`    Number of LSTM layers  
 
-`use_hier` Flag whether to use hierarchical or flat decoder
+**Sequential decoder**  
+`seq_decoder_args`           Arguments for the seq decoder factory  
+`seq_decoder_args.key`       Type of sequential decoder, available are 'sample', 'greedy' and 'hier'  
+`seq_decoder_args.params`    Parameter for the sequential decoder, depends on the type  
 
-`decoder_params`             Parameter of (bottom) decoder  
-`decoder_params.embed_size`  Output size of embedding  
-`decoder_params.hidden_size` Hidden size  
-`decoder_params.n_layers`    Number of LSTM layers  
+*Params for greedy:*  
+The greedy decoder uses the most likely output token as next input for the decoder.  
 
-*hierarchical decoder only*:  
-`n_subsequences` Number of subsequences  
+`z_size`       The context size of the encoder (or conductor if used as bottom layer decoder in hier decoder)  
+`decoder_args` Arguments for the decoder (see *decoder_args*)  
 
-`c_size` Size of conductor embedding  
+*Params for sample:*  
+The sample decoder samples from the output distribution to get the next input for the decoder.  
 
-`conductor_params`             Parameter of conductor  
-`conductor_params.hidden_size` Hidden size  
-`conductor_params.n_layers`    Number of LSTM layers  
+`z_size`       The context size of the encoder (or conductor if used as bottom layer decoder in hier decoder)
+`temperature`  Parameter used to flatten/steepen the output distribution (default 1.0)  
+`decoder_args` Arguments for the decoder (see *decoder_args*)  
+
+*Params for hier:*  
+The hier decoder has a high-level conductor that provides a context for the bottom level decoder
+which decodes subsequences of a given sequence.  
+
+`z_size`           The context size of the encoder (or conductor if used as bottom layer decoder in hier decoder)  
+`n_subsequences`   Number of subsequences  
+`conductor_args`   Arguments for the conductor (see *decoder_args*)  
+`seq_decoder_args` Arguments for the bottom layer seq decoder this is again a seq_decoder (see *seq_decoder_args*)
+
+**Decoder**  
+Defines the decoder to be used in a sequential decoder
+
+`decoder_args`           Arguments for the decoder factory  
+`decoder_args.key`       Type of decoder, available are 'simple', 'another' and 'conductor'  
+`decoder_args.params`    Parameter for the decoder, depends on the type  
+
+
+*Params for simple:*  
+Simple decoder gets previous hidden state and input token and returns logits for next output.  
+
+`embed_size`             Embedding size of input token  
+`hidden_size`            Hidden size  
+`n_layers`               Number of LSTM layers  
+
+*Params for another:*  
+This decoder also uses the context as input to predict the next output.
+
+`embed_size`             Embedding size of input token  
+`hidden_size`            Hidden size  
+`n_layers`               Number of LSTM layers  
+`z_size`                 Size of current context
+
+*Params for conductor:*  
+Only be used as conductor in hier sequential decoder  
+
+`hidden_size`            Hidden size  
+`n_layers`               Number of LSTM layers  
+`c_size`                 Size of conductor output
+
 
 **Training process**  
 `num_steps` Number of steps to train  

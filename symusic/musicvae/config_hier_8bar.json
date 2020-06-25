@@ -7,8 +7,8 @@
     "advanced_interval": 1000,
     "print_interval": 400,
 
-    "train_dir": "../data/lmd_full_split/train",
-    "eval_dir": "../data/lmd_full_split/val",
+    "train_dir": "./data/lmd_full_split/train",
+    "eval_dir": "./data/lmd_full_split/val",
 
     "slice_bar": 8,
 
@@ -36,20 +36,34 @@
         "n_layers": 2
     },
 
-    "use_hier": true,
-
-    "c_size": 512,
-
-    "n_subsequences": 8,
-
-    "conductor_params": {
-        "hidden_size": 1024,
-        "n_layers": 2
-    },
-
-    "decoder_params": {
-        "embed_size": 12,
-        "hidden_size": 1024,
-        "n_layers": 2
+    "seq_decoder_args": {
+        "key": "hier",
+        "params": {
+            "z_size": 512,
+            "n_subsequences": 8,
+            "conductor_args": {
+                "key": "conductor",
+                "params": {
+                    "hidden_size": 1024,
+                    "c_size": 512,
+                    "n_layers": 2
+                }
+            },
+            "seq_decoder_args": {
+                "key": "greedy",
+                "params": {
+                    "z_size": 512,
+                    "decoder_args": {
+                        "key": "another",
+                        "params": {
+                            "z_size": 512,
+                            "embed_size": 12,
+                            "hidden_size": 1024,
+                            "n_layers": 2
+                        }
+                    }
+                }
+            }
+        }
     }
 }

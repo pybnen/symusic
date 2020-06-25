@@ -152,8 +152,7 @@ def train(model, dl_train, opt, lr_scheduler, device, beta_settings, sampling_se
 @ex.capture
 def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, sampling_settings, free_bits,
         encoder_params, seq_decoder_args, learning_rate, train_dir, eval_dir, slice_bar,
-        lr_scheduler_factor, lr_scheduler_patience, use_hier,
-        conductor_params=None, c_size=None, n_subsequences=None,
+        lr_scheduler_factor, lr_scheduler_patience,
         evaluate_interval=1000, advanced_interval=200, print_interval=200, ckpt_path=None):
     global logger
 
@@ -227,20 +226,19 @@ def run(_run, num_steps, batch_size, num_workers, z_size, beta_settings, samplin
 
 @ex.config
 def config():
-    num_steps = 20_000
+    num_steps = 160
 
     batch_size = 2
     num_workers = 0
 
     ckpt_path = None
 
-    evaluate_interval = 1000
-    advanced_interval = 200
-    print_interval = 200
+    evaluate_interval = 80
+    advanced_interval = 40
+    print_interval = 20
 
-    # melody_dir = r"C:\Users\yggdrasil\Studium Informatik\12Semester\Project\data\lmd_full_melody_128\0\0\\"
-    train_dir = "../data/lmd_full/test"
-    eval_dir = "../data/lmd_full/val"
+    train_dir = "./data/lmd_full_split/test"
+    eval_dir = "./data/lmd_full_split/val"
 
     slice_bar = 8
 
@@ -269,19 +267,55 @@ def config():
         "n_layers": 2
     }
 
-    use_hier = False
-
-    c_size = None
-
-    n_subsequences = None
-
-    conductor_params = None
-
-    decoder_params = {
-        "embed_size": 12,
-        "hidden_size": 64,
-        "n_layers": 2
+    # config for flat decoder
+    seq_decoder_args = {
+        "key": "sample",
+        "params": {
+            "temperature": 1.0,
+            "z_size": 32,
+            "decoder_args": {
+                "key": "another",
+                "params": {
+                    "z_size": 32,
+                    "embed_size": 12,
+                    "hidden_size": 23,
+                    "n_layers": 2
+                }
+            }
+        }
     }
+
+    # config for hierarchical decoder
+    # seq_decoder_args = {
+    #     "key": "hier",
+    #     "params": {
+    #         "z_size": 32,
+    #         "n_subsequences": 2,
+    #         "conductor_args": {
+    #             "key": "conductor",
+    #             "params": {
+    #                 "hidden_size": 12,
+    #                 "c_size": 16,
+    #                 "n_layers": 2
+    #             }
+    #         },
+    #         "seq_decoder_args": {
+    #             "key": "sample",
+    #             "params": {
+    #                 "temperature": 1.0,
+    #                 "z_size": 16,
+    #                 "decoder_args": {
+    #                     "key": "simple",
+    #                     "params": {
+    #                         "embed_size": 12,
+    #                         "hidden_size": 12,
+    #                         "n_layers": 2
+    #                     }
+    #                 }
+    #             }
+    #         }
+    #     }
+    # }
 
 
 @ex.automain
