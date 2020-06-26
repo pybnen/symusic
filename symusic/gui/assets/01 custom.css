@@ -52,7 +52,11 @@ body {
   overflow: auto;
 }
 
-
 audio {
   max-width: 100%;
+}
+
+#melody-space-graph{
+  left: calc(50% - 400px);
+  position: relative;
 }

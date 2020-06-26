@@ -8,24 +8,15 @@ import symusic.gui.globals as globals
 from symusic.gui.components import melody_result_view
 from symusic.gui.utils import melody_to_graph, melody_to_audio
 from symusic.gui.app import app
-import plotly.express as px
-
-color_dropdown_options = ["acc", "kl_loss", "r_loss"]
-
+import plotly.graph_objects as go
 
 def melody_space_view():
     return html.Div(className="melody-space melody-container", children=[
         html.H3("Melody Space"),
-        html.P("Two dimensional t-sne projection of z encodings of train/eval melodies."),
-        html.Div(className="row", children=[
-            html.Div(className="columns five", children=dcc.Dropdown(
-                id="melody-space-color-dropdown",
-                options=[{"label": value, "value": value} for value in color_dropdown_options],
-                value=color_dropdown_options[0]
-            )),
-        ]),
+        html.P("Two dimensional t-sne projection of z encodings of melodies from a test set."),
+        html.Button(id="hidden_btn", style=dict(display="None")),
         html.Hr(),
-        dcc.Graph(id="melody-space-graph")
+        dcc.Graph(id="melody-space-graph", style=dict(width=800))
     ])
 
 
@@ -34,8 +25,8 @@ layout = html.Div(children=[
         html.Div(className="columns twelve", children=melody_space_view()),
     ]),
     html.Div(className="row", style={"marginTop": "10px"}, children=[
-        html.Div(className="columns six", children=melody_result_view("melody-space-recon")),
-        html.Div(className="columns six", children=melody_result_view("melody-space-orig"))
+        html.Div(className="columns six", children=melody_result_view("melody-space-recon", h3="Reconstruction")),
+        html.Div(className="columns six", children=melody_result_view("melody-space-orig", h3="Original"))
     ])
 ])
 
@@ -58,9 +49,18 @@ def display_click_data(click_data):
 
 
 @app.callback(Output("melody-space-graph", "figure"),
-              [Input("melody-space-color-dropdown", "value")])
-def melody_space_update_view(color):
-    return px.scatter(x=globals.tsne_data["y_0"],
-                      y=globals.tsne_data["y_1"],
-                      color=globals.tsne_data[color], height=800,
-                      color_continuous_scale="magma")
+              [Input("hidden_btn", "n_clicks")])
+def melody_space_update_view(_):
+    fig = go.Figure(data=go.Scatter(x=globals.tsne_data["y_0"],
+                                     y=globals.tsne_data["y_1"],
+                                     mode='markers',
+                                     marker=dict(size=3)))
+    fig.update_layout(autosize=False, width=800, height=800,  margin=dict(
+        l=0,
+        r=0,
+        b=0,
+        t=0,
+        pad=4
+    ))
+    return fig
+

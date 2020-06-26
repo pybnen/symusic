@@ -29,7 +29,7 @@ def melody_selector(id, midi_dropdown_options):
     ])
 
 
-def melody_result_view(id, show_original=False):
+def melody_result_view(id, show_original=False, h3="Melody Result"):
     original_view = []
     class_name = "melody-result melody-container"
     placeolder_url = "./assets/images/pianoroll_placeholder.png"
@@ -43,7 +43,7 @@ def melody_result_view(id, show_original=False):
         ]
 
     return html.Div(className=class_name, children=[
-        html.H3("Melody Result"),
+        html.H3(h3),
         html.Hr(),
         html.Label("Reconstruction:", className="melody-result-label"),
         html.Img(id={"type": "melody-result-graph", "id": id}, className="pianoroll-graph", src=placeolder_url),
