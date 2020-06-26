@@ -8,7 +8,7 @@ python -m symusic.gui.index /path/to/checkpoint/dir
 
 ## Checkpoint
 
-Download a checkpoint from my train run [here](link_to_checkpoint).
+Download a checkpoint from my train run [here](https://drive.google.com/file/d/1K7Yy8nJifR5DjfQeMbyy0LECf4_B-TsS/view?usp=sharing).
 
 To create your own checkpoint, first you need to train a model (see [/symusic/musicvae](/symusic/musicvae/README.md)).
 The resulting checkpoint file contains the learned weights but also information needed to continue training, like

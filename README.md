@@ -136,7 +136,7 @@ python -m symusic.gui.index /path/to/checkpoint/dir
 
 ### Checkpoint
 
-Download a checkpoint from my train run [here](link_to_checkpoint).
+Download a checkpoint from my train run [here](https://drive.google.com/file/d/1K7Yy8nJifR5DjfQeMbyy0LECf4_B-TsS/view?usp=sharing).
 
 See [/symusic/musicvae](/symusic/gui/README.md) for a short description on how to create a checkpoint for the
 visualisation.
