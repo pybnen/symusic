@@ -36,6 +36,7 @@ If the `environment.yml` didn't work you can try to create a conda environment m
 
 ```bash
 conda create -n symusic python=3.7.6
+conda activate symusic
 pip install torch==1.4.0+cpu torchvision==0.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
 pip install sacred==0.8.1
 pip install pretty-midi==0.2.8
