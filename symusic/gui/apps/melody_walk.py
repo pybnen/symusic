@@ -20,7 +20,7 @@ def melody_walk_view():
         html.Div(className="row", children=[
             html.Div(className="columns two", children=html.Label(children="Interpolation steps:")),
             dcc.Input(id="num-steps-input", type="number", min=3, max=12, value=7, step=1, className="columns two"),
-            dcc.Input(id="melody-walk-temperature-input", type="number", value=1.0, className="columns two"),
+            dcc.Input(id="melody-walk-temperature-input", type="number", value=0.01, className="columns two"),
             html.Div(className="columns five", children=html.Button(id="interpolate-btn", children="Start walking"))
         ]),
         html.Hr(),

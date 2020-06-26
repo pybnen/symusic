@@ -17,7 +17,6 @@ N_SLIDER = 10
 Z_SLIDER_MIN = -5.0
 Z_SLIDER_MAX = 5.0
 Z_SLIDER_PRECISION = 4
-Z_DIM_FORMAT = "{:+." + str(Z_SLIDER_PRECISION) + "f}"
 
 # TODO instead of this global value use store,
 #  use callback to only change one dimension if MATCH slider was changed (instead of ALL slider)
@@ -31,15 +30,12 @@ def melody_mixer():
     for i in range(N_SLIDER):
         slider = html.Div(className="row", children=[
             html.Div(className="columns two", children=html.Label(children="Dim {}".format(i))),
-            html.Div(className="columns eight", children=dcc.Slider(
+            html.Div(className="columns ten", children=dcc.Slider(
                 id={"type": "z-dim-slider", "id": i},
                 min=Z_SLIDER_MIN,
                 max=Z_SLIDER_MAX,
                 step=10 ** -Z_SLIDER_PRECISION,
-            )),
-            html.Div(className="columns two", children=html.Label(
-                id={"type": "z-dim-label", "id": i},
-                children=Z_DIM_FORMAT.format(0.0)))
+            ))
         ])
         sliders.append(slider)
 
@@ -49,7 +45,7 @@ def melody_mixer():
             html.Div(className="columns three",
                      children=html.Button(id="init-z-from-melody-btn", children="From melody")),
             html.Div(className="columns three", children=html.Button(id="init-z-random-btn", children="Random")),
-            dcc.Input(id="melody-mix-temperature-input", type="number", value=1.0, className="columns three"),
+            dcc.Input(id="melody-mix-temperature-input", type="number", value=0.01, className="columns three"),
             html.Div(className="columns three", children=html.Button(id="generate-mix-btn", children="Generate")),
         ]),
         html.Hr(),
@@ -93,12 +89,6 @@ def melody_mixer_init_z(n_clicks1, n_clicks2, midi_path, track_idx, start_bar):
         global_midi_program = midi_program
     global_z = z
     return z[:N_SLIDER]
-
-
-@app.callback(Output({"type": "z-dim-label", "id": ALL}, "children"),
-              [Input({"type": "z-dim-slider", "id": ALL}, "value")])
-def melody_mixer_update_z_labels(values):
-    return [Z_DIM_FORMAT.format(value) for value in values]
 
 
 @app.callback([Output({"type": "melody-result-graph", "id": "melody-mix-result"}, "src"),

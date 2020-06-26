@@ -29,7 +29,7 @@ def setup(ckpt_dir):
 
 assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./assets"))
 
-midi_assets = ["mel_2bar-bass.mid", "mel_2bar-mel.mid", "sample1.mid", "sample2.mid", "sample3.mid", "sample4.mid"]
+midi_assets = ["sample1.mid", "sample2.mid", "sample3.mid", "sample4.mid"]
 midi_dropdown_options = {midi: os.path.join(assets_dir, "midis", midi) for midi in midi_assets}
 
 audio_filesystem_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./tmp_audio")) + "/"
