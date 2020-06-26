@@ -41,7 +41,7 @@ def criterion(outputs, target, mu, logvar):
     return torch.stack(r_losses, dim=0), kl_div, acc
 
 
-def generate_data(model, data_loader):
+def generate_data(model, data_loader, device):
     r_loss_arr = []
     kl_loss_arr = []
     acc_arr = []
@@ -50,6 +50,7 @@ def generate_data(model, data_loader):
     recon_melody_arr = []
     z_arr = []
     for x in data_loader:
+        x = x.to(device)
         z, mu, logvar = model.encode_tensors(x)
         _, outputs = model.decode_to_tensors(z, length=x.shape[1])
 
@@ -62,7 +63,7 @@ def generate_data(model, data_loader):
 
         orig_melody_arr.extend([m for m in model.tensors_to_melodies(x)])
         recon_melody_arr.extend([m for m in model.tensors_to_melodies(outputs.argmax(dim=-1))])
-        z_arr.extend([sample_z.numpy() for sample_z in z])
+        z_arr.extend([sample_z.numpy() for sample_z in z.detach().cpu()])
 
     df = pd.DataFrame(dict(orig_melody=orig_melody_arr,
                            recon_melody=recon_melody_arr,
@@ -103,14 +104,15 @@ def main():
 
     # get dataset/loader
     dataset = melody_dataset.MelodyDataset(midi_dir=args.dataset_dir,
+                                           max_melodies_per_sample=1,
                                            slice_bars=args.slice_bars,
-                                           transforms=melody_dict, train=False)
+                                           transforms=melody_dict, train=True)
 
     data_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     print(f"Dataset files: {len(dataset.midi_files)}")
 
     print("Generating data...")
-    df = generate_data(model, data_loader)
+    df = generate_data(model, data_loader, device)
     #  save data from reconstruction
     df.to_pickle(str(outdir / "recon_data.pkl"))
 

@@ -62,4 +62,5 @@ def display_click_data(click_data):
 def melody_space_update_view(color):
     return px.scatter(x=globals.tsne_data["y_0"],
                       y=globals.tsne_data["y_1"],
-                      color=globals.tsne_data[color], height=800)
+                      color=globals.tsne_data[color], height=800,
+                      color_continuous_scale="magma")
